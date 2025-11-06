@@ -1,6 +1,6 @@
 <?php
 
-class ControllerExtensionModuleOvesioEvent extends Controller
+class ControllerModuleOvesioEvent extends Controller
 {
     private $module_key;
 
@@ -38,13 +38,8 @@ class ControllerExtensionModuleOvesioEvent extends Controller
             return;
         }
 
-        try {
-            $this->ovesio->{$resource}($resource_id);
-            $this->ovesio->sendData();
-        } catch(Throwable $e) {
-            echo "Ovesio Error";
-            echo "<pre>{$e}</pre>";
-            exit();
-        }
+        $this->load->model('module/ovesio');
+
+        $this->model_module_ovesio->setStale($resource, $resource_id, 1);
     }
 }

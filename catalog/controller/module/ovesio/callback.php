@@ -1,8 +1,8 @@
 <?php
 
-require_once(modification($_SERVER['DOCUMENT_ROOT'] . '/catalog/model/extension/module/ovesio.php'));
+require_once(modification($_SERVER['DOCUMENT_ROOT'] . '/catalog/model/module/ovesio.php'));
 
-class ControllerExtensionModuleOvesioCallback extends Controller
+class ControllerModuleOvesioCallback extends Controller
 {
     private $output = [];
     private $module_key = 'ovesio';
@@ -17,10 +17,7 @@ class ControllerExtensionModuleOvesioCallback extends Controller
             $this->module_key = 'module_ovesio';
         }
 
-        $this->model = new ModelExtensionModuleOvesio($registry);
-
-        $from_language_id = $this->config->get($this->module_key . '_catalog_language_id');
-        $this->model->setLanguageId($from_language_id);
+        $this->model = new ModelModuleOvesio($registry);
     }
 
     public function index()
@@ -65,27 +62,23 @@ class ControllerExtensionModuleOvesioCallback extends Controller
         }
 
         list($resource, $identifier) = explode('/', $data['ref']);
-        $language_code = $data['to'];
+        $ovesio_language_code = $data['to'];
 
         $status = 0;
         if (empty($this->request->get['type'])) {
             throw new Exception('Wrong request');
         }
 
-        $type = $this->request->get['type'];
-        switch($type) {
-            case 'generate_description':
-                $status = $this->config->get($this->module_key . '_description_status');
-                break;
-            case 'metatags':
-                $status = $this->config->get($this->module_key . '_metatags_status');
-                break;
-            case 'translate':
-                $status = $this->config->get($this->module_key . '_translation_status');
-                break;
+        $activity_type = $this->request->get['type'];
+        if ($activity_type == 'generate_content') {
+            $status = $this->config->get($this->module_key . '_content_status');
+        } elseif ($activity_type == 'generate_seo') {
+            $status = $this->config->get($this->module_key . '_generate_seo_status');
+        } elseif ($activity_type == 'translate') {
+            $status = $this->config->get($this->module_key . '_translation_status');
         }
 
-        if (empty($type)) {
+        if (empty($activity_type)) {
             throw new Exception('Data received has empty type');
         }
 
@@ -97,54 +90,55 @@ class ControllerExtensionModuleOvesioCallback extends Controller
             throw new Exception('Identifier cannot be empty');
         }
 
-        $language_id  = null;
-        $language_match = $this->config->get($this->module_key . '_language_match');
-        foreach($language_match as $match_language_id => $lang) {
-            if(!empty($lang['code']) && $lang['code'] == $language_code) {
+        $this->load->library('ovesio');
+
+        $language_id  = $this->ovesio->getDefaultLanguageId();
+        $language_settings = $this->config->get($this->module_key . '_language_settings');
+        foreach($language_settings as $match_language_id => $lang) {
+            if(!empty($lang['code']) && $lang['code'] == $ovesio_language_code) {
                 $language_id = $match_language_id;
                 break;
             }
         }
 
-        if (!$language_id) {
-            throw new Exception('Language match not found!');
-        }
-
         $query = $this->db->query("SELECT language_id FROM " . DB_PREFIX . "language WHERE language_id = '" . $language_id . "'");
         if (!$query->row) {
-            throw new Exception('Language id "' . $language_code . '" not found');
+            throw new Exception('Language id "' . $ovesio_language_code . '" not found');
         }
 
         $data['language_id'] = $query->row['language_id'];
 
-        $method = $type . '_' . $resource;
+        $method = $activity_type . '_' . $resource;
         if (! method_exists($this, $method)) {
             throw new Exception('Method "' . $method . '" not found, wrong response type');
         }
 
-        $this->{$method}($identifier, $data);
+        try {
+            $this->{$method}($identifier, $data);
+        } catch (Throwable $e) {
+            // stop updating list
+            throw new Exception('Error processing ' . $method . ': ' . $e->getMessage() . ' ' . $e->getFile() . ':' . $e->getLine());
+        }
 
         // Update log table
         list($resource, $resource_id) = explode('/', $data['ref']);
 
         $this->model->addList([
-            'resource' => $resource,
-            'resource_id' => $resource_id,
-            'lang' => $type == 'translate' ? $data['from'] : $data['to']
-        ],[
-            $type . '_id' => $data['id'],
-            $type . '_status' => 1,
+            'resource_type' => $resource,
+            'resource_id'   => $resource_id,
+            'activity_type' => $activity_type,
+            'lang'          => $ovesio_language_code,
+            'status'        => 'completed',
+            'response'      => json_encode($data['content']),
         ]);
 
-        // move to next event!
-        $this->load->library('ovesio');
-        if($type == 'generate_description') {
-            $this->ovesio->add('metatags', $resource, $resource_id);
-            $this->ovesio->sendData();
-        } elseif($type == 'metatags') {
-            $this->ovesio->add('translate', $resource, $resource_id);
-            $this->ovesio->sendData();
-        }
+        // $resource, $resource_id
+        $queue_handler = $this->ovesio->buildQueueHandler();
+
+        $queue_handler->processQueue([
+            'resource_type' => $resource,
+            'resource_id'   => $resource_id,
+        ]);
 
         $this->setOutput(array_merge($this->output, [
             'success' => true
@@ -319,7 +313,7 @@ class ControllerExtensionModuleOvesioCallback extends Controller
      */
     private function seoProduct($product_id, $language_id, $product_description)
     {
-        if (!$this->config->get('module_seo_enabled')) {
+        if (1 || !$this->config->get('module_seo_enabled')) {
             return;
         }
 
@@ -336,12 +330,12 @@ class ControllerExtensionModuleOvesioCallback extends Controller
             }
         }
 
-        $this->load->controller('extension/module/complete_seo/event/product/after_model_product_edit', 'editProduct', [$product_id, $data], $product_id, true);
+        $this->load->controller('module/complete_seo/event/product/after_model_product_edit', 'editProduct', [$product_id, $data], $product_id, true);
     }
 
     private function seoCategory($category_id, $language_id, $category_description)
     {
-        if (!$this->config->get('module_seo_enabled')) {
+        if (1 || !$this->config->get('module_seo_enabled')) {
             return;
         }
 
@@ -358,7 +352,7 @@ class ControllerExtensionModuleOvesioCallback extends Controller
             }
         }
 
-        $this->load->controller('extension/module/complete_seo/event/category/after_model_category_edit', 'editCategory', [$category_id, $data], $category_id, true);
+        $this->load->controller('module/complete_seo/event/category/after_model_category_edit', 'editCategory', [$category_id, $data], $category_id, true);
     }
 
     /**

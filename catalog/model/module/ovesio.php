@@ -1,20 +1,40 @@
 <?php
 
-class ModelExtensionModuleOvesio extends Model
+class ModelModuleOvesio extends Model
 {
-    private $from_language_id;
+    private $default_language_id;
+    private $module_key = 'ovesio';
 
     public function __construct($registry)
     {
         parent::__construct($registry);
+
+        /**
+         * Changes needed for v3
+         */
+        if (version_compare(VERSION, '3.0.0.0') >= 0) {
+            $this->module_key = 'module_ovesio';
+        }
+
+        $default_language = $this->config->get($this->module_key . '_default_language');
+        $config_language  = $this->config->get('config_language');
+
+        if (stripos($default_language, $config_language) === 0) {
+            $default_language_id = $this->config->get('config_language_id');
+        } else {
+            $query = $this->db->query("SELECT language_id FROM " . DB_PREFIX . "language WHERE code LIKE '%" . $this->db->escape($default_language) . "' LIMIT 1");
+
+            $default_language_id = $query->row['language_id'];
+        }
+
+        if (!$default_language_id) {
+            throw new Exception("Could not detect local default language based on language code " . $default_language);
+        }
+
+        $this->default_language_id = $default_language_id;
     }
 
-    public function setLanguageId($language_id)
-    {
-        $this->from_language_id = $language_id;
-    }
-
-    public function getCategories($category_ids = [], $status)
+    public function getCategories($category_ids, $status)
     {
         $where = '';
         if (!empty($category_ids)) {
@@ -27,13 +47,13 @@ class ModelExtensionModuleOvesio extends Model
 
         $query = $this->db->query("SELECT cd.* FROM " . DB_PREFIX . "category_description as cd
             JOIN " . DB_PREFIX . "category as c ON c.category_id = cd.category_id
-            WHERE cd.language_id = {$this->from_language_id} $where
+            WHERE cd.language_id = '{$this->default_language_id}' $where
             ORDER BY c.category_id");
 
         return $query->rows;
     }
 
-    public function getCategoriesWithDescriptionDependency($category_ids = [], $status, $language)
+    public function getCategoriesWithDescriptionDependency($category_ids, $status)
     {
         $where = '';
         if (!empty($category_ids)) {
@@ -46,14 +66,14 @@ class ModelExtensionModuleOvesio extends Model
 
         $query = $this->db->query("SELECT cd.* FROM " . DB_PREFIX . "category_description as cd
         JOIN " . DB_PREFIX . "category as c ON c.category_id = cd.category_id
-        JOIN " . DB_PREFIX . "ovesio_list as ol ON ol.resource = 'category' AND ol.resource_id = c.category_id AND ol.lang = '{$language}'
-        WHERE cd.language_id = {$this->from_language_id} AND ol.generate_description_id > 0 AND ol.generate_description_status = 1 $where
+        JOIN " . DB_PREFIX . "ovesio_activity as ova ON ova.resource_type = 'category' AND ova.resource_id = c.category_id
+        WHERE cd.language_id = '{$this->default_language_id}' AND ova.activity_id > 0 AND ova.status = 'completed' $where
         ORDER BY c.category_id");
 
         return $query->rows;
     }
 
-    public function getProducts($product_id = [], $status, $out_of_stock)
+    public function getProducts($product_id, $status, $out_of_stock)
     {
         $where = '';
         if (!empty($product_id)) {
@@ -70,13 +90,13 @@ class ModelExtensionModuleOvesio extends Model
 
         $query = $this->db->query("SELECT pd.* FROM " . DB_PREFIX . "product_description as pd
             JOIN " . DB_PREFIX . "product as p ON p.product_id = pd.product_id
-            WHERE pd.language_id = {$this->from_language_id} $where
+            WHERE pd.language_id = '{$this->default_language_id}' $where
             ORDER BY p.product_id");
 
         return $query->rows;
     }
 
-    public function getProductsWithDescriptionDependency($product_id = [], $status, $out_of_stock, $language)
+    public function getProductsWithDescriptionDependency($product_id, $status, $out_of_stock)
     {
         $where = '';
         if (!empty($product_id)) {
@@ -93,8 +113,8 @@ class ModelExtensionModuleOvesio extends Model
 
         $query = $this->db->query("SELECT pd.* FROM " . DB_PREFIX . "product_description as pd
             JOIN " . DB_PREFIX . "product as p ON p.product_id = pd.product_id
-            JOIN " . DB_PREFIX . "ovesio_list as ol ON ol.resource = 'product' AND ol.resource_id = p.product_id AND ol.lang = '{$language}'
-            WHERE pd.language_id = {$this->from_language_id} AND ol.generate_description_id > 0 AND ol.generate_description_status = 1 $where
+            JOIN " . DB_PREFIX . "ovesio_activity as ova ON ova.resource_type = 'product' AND ova.resource_id = p.product_id
+            WHERE pd.language_id = '{$this->default_language_id}' AND ova.activity_id > 0 AND ova.status = 'completed' $where
             ORDER BY p.product_id");
 
         return $query->rows;
@@ -110,7 +130,7 @@ class ModelExtensionModuleOvesio extends Model
         $query = $this->db->query("SELECT pa.product_id, pa.attribute_id, pa.text
         FROM " . DB_PREFIX . "product_attribute as pa
         JOIN ". DB_PREFIX ."product as p ON p.product_id = pa.product_id
-        WHERE pa.language_id = {$this->from_language_id} $where
+        WHERE pa.language_id = '{$this->default_language_id}' $where
         ORDER BY pa.attribute_id");
 
 
@@ -134,7 +154,7 @@ class ModelExtensionModuleOvesio extends Model
 
         $query = $this->db->query("SELECT a.attribute_id, a.attribute_group_id, ad.name FROM " . DB_PREFIX . "attribute_description as ad
         JOIN " . DB_PREFIX . "attribute as a ON a.attribute_id = ad.attribute_id
-        WHERE ad.language_id = {$this->from_language_id} $where ORDER BY a.attribute_id");
+        WHERE ad.language_id = '{$this->default_language_id}' $where ORDER BY a.attribute_id");
 
         return $query->rows;
     }
@@ -148,7 +168,7 @@ class ModelExtensionModuleOvesio extends Model
 
         $query = $this->db->query("SELECT agd.attribute_group_id, agd.name FROM " . DB_PREFIX . "attribute_group_description as agd
         JOIN " . DB_PREFIX . "attribute_group as ag ON ag.attribute_group_id = agd.attribute_group_id
-        WHERE agd.language_id = {$this->from_language_id} {$where} ORDER BY ag.attribute_group_id");
+        WHERE agd.language_id = '{$this->default_language_id}' {$where} ORDER BY ag.attribute_group_id");
 
         return $query->rows;
     }
@@ -162,7 +182,7 @@ class ModelExtensionModuleOvesio extends Model
 
         $query = $this->db->query("SELECT a.attribute_id, a.attribute_group_id, ad.name FROM " . DB_PREFIX . "attribute_description as ad
         JOIN " . DB_PREFIX . "attribute as a ON a.attribute_id = ad.attribute_id
-        WHERE ad.language_id = {$this->from_language_id} $where ORDER BY a.attribute_id");
+        WHERE ad.language_id = '{$this->default_language_id}' $where ORDER BY a.attribute_id");
 
         return $query->rows;
     }
@@ -174,7 +194,7 @@ class ModelExtensionModuleOvesio extends Model
             $where = 'AND ovd.option_id IN (' . implode(',', $option_ids) . ')';
         }
 
-        $query = $this->db->query("SELECT ovd.option_id, ovd.option_value_id, ovd.name FROM " . DB_PREFIX . "option_value_description as ovd WHERE ovd.language_id = {$this->from_language_id} $where");
+        $query = $this->db->query("SELECT ovd.option_id, ovd.option_value_id, ovd.name FROM " . DB_PREFIX . "option_value_description as ovd WHERE ovd.language_id = '{$this->default_language_id}' $where");
 
         return $query->rows;
     }
@@ -188,7 +208,7 @@ class ModelExtensionModuleOvesio extends Model
 
         $query = $this->db->query("SELECT o.option_id, od.name FROM " . DB_PREFIX . "option_description as od
         JOIN " . DB_PREFIX . "option as o ON o.option_id = od.option_id
-        WHERE od.language_id = {$this->from_language_id} $where ORDER BY o.option_id");
+        WHERE od.language_id = '{$this->default_language_id}' $where ORDER BY o.option_id");
 
         return $query->rows;
     }
@@ -319,54 +339,16 @@ class ModelExtensionModuleOvesio extends Model
         return $data;
     }
 
-    public function getHashList(string $resource, array $resource_ids, string $lang, string $type)
+    public function addList(array $data = [])
     {
-        $query = $this->db->query("SELECT resource_id, {$type}_hash FROM " . DB_PREFIX . "ovesio_list WHERE `resource` = '" . $resource . "' AND `resource_id` IN (" . implode(',', $resource_ids) . ") AND lang = '" . $lang . "' AND {$type}_id >= 0 GROUP BY resource_id");
-
-        $status = array_fill_keys($resource_ids, null);
-        foreach($query->rows as $row) {
-            $status[$row['resource_id']] = $row[$type . '_hash'];
-        }
-
-        return $status;
-    }
-
-    public function addList(array $where = [], array $data = [])
-    {
-        if (empty($where) || empty($data)) {
-            return;
-        }
-
-        $where_sql = [];
-        foreach ($where as $key => $value) {
-            $where_sql[] = "`" . $key . "` = '" . $this->db->escape($value) . "'";
-        }
-
-        $where_hash_not_null = "";
-        $fields_sql = [];
+        $fields = [];
         foreach ($data as $key => $value) {
-            if(is_null($value) && strstr($key, '_hash'))
-            {
-                $where_hash_not_null = "AND `" . $key . "` IS NULL";
-            } else {
-                $fields_sql[] = "`" . $key . "` = '" . $this->db->escape($value) . "'";
-            }
+            $fields[] = "`" . $key . "` = '" . $this->db->escape($value) . "'";
         }
 
-        // check if exists first
-        $query = $this->db->query("SELECT id FROM " . DB_PREFIX . "ovesio_list WHERE " . implode(' AND ', $where_sql));
+        $fields_sql = implode(', ', $fields);
 
-        if ($query->row) {
-            $this->db->query("UPDATE " . DB_PREFIX . "ovesio_list SET " . implode(', ', $fields_sql) . " WHERE id = " . (int) $query->row['id'] . " {$where_hash_not_null}");
-
-            return $query->row['id'];
-        } else {
-            $fields_sql = array_merge($where_sql, $fields_sql);
-
-            $this->db->query("INSERT INTO " . DB_PREFIX . "ovesio_list SET " . implode(', ', $fields_sql));
-
-            return $this->db->getLastId();
-        }
+        $this->db->query("INSERT INTO " . DB_PREFIX . "ovesio_activity SET " . $fields_sql . " ON DUPLICATE KEY UPDATE " . $fields_sql);
     }
 
     public function getProductCategories($product_ids)
@@ -396,102 +378,236 @@ class ModelExtensionModuleOvesio extends Model
 		return $query->row;
 	}
 
-    public function getCronList($language, $module_key)
+    public function getCronList($params = [])
     {
-        $description_status = (int) $this->config->get($module_key . '_description_status');
-        $translation_status = (int) $this->config->get($module_key . '_translation_status');
-        $metatags_status = (int) $this->config->get($module_key . '_metatags_status');
+        $resource_type = isset($params['resource_type']) ? $this->db->escape($params['resource_type']) : null;
+        $resource_id   = isset($params['resource_id']) ? (int) $params['resource_id'] : null;
+        $limit         = isset($params['limit']) ? (int) $params['limit'] : 20;
 
-        $send_disabled = (int) $this->config->get($module_key . '_description_send_disabled');
-        $send_disabled += (int) $this->config->get($module_key . '_send_disabled');
-        $send_disabled += (int) $this->config->get($module_key . '_metatags_send_disabled');
+        $limit = max(10, $limit);
 
-        $pwhere = '';
-        $cwhere = '';
-        if ($send_disabled == 0) {
-            $pwhere .= " AND p.status = 1";
-            $cwhere .= " AND c.status = 1";
-		}
+        $generate_content_status = (bool) $this->config->get($this->module_key . '_generate_content_status');
+        $generate_seo_status     = (bool) $this->config->get($this->module_key . '_generate_seo_status');
+        $translate_status        = (bool) $this->config->get($this->module_key . '_translate_status');
 
-        $include_out_of_stock = (int) $this->config->get($module_key . '_description_send_stock_0');
-        $include_out_of_stock += (int) $this->config->get($module_key . '_send_stock_0');
-        $include_out_of_stock += (int) $this->config->get($module_key . '_metatags_send_stock_0');
+        $generate_content_include_disabled = array_filter((array) $this->config->get($this->module_key . '_generate_content_include_disabled'));
+        $generate_seo_include_disabled     = array_filter((array) $this->config->get($this->module_key . '_generate_seo_include_disabled'));
+        $translate_include_disabled        = array_filter((array) $this->config->get($this->module_key . '_translate_include_disabled'));
 
-        if ($include_out_of_stock  == 0) {
-            $pwhere .= " AND p.quantity > '0'";
+        $generate_content_for = array_filter((array) $this->config->get($this->module_key . '_generate_content_for'));
+        $generate_seo_for     = array_filter((array) $this->config->get($this->module_key . '_generate_seo_for'));
+        $translate_fields     = (array) $this->config->get($this->module_key . '_translate_fields');
+        $translate_for        = array_filter($translate_fields, function($item) {
+            return array_filter($item);
+        });
+
+        $generate_content_stock_0 = (bool) $this->config->get($this->module_key . '_generate_content_include_stock_0');
+        $generate_seo_stock_0     = (bool) $this->config->get($this->module_key . '_generate_seo_include_stock_0');
+        $translate_stock_0        = (bool) $this->config->get($this->module_key . '_translate_include_stock_0');
+
+        $resources  = [];
+        if ($generate_content_status) {
+            $resources = array_merge($resources, $generate_content_for);
         }
 
-        $sql = "SELECT
-                r.`resource`,
-                r.resource_id,
-                ol.id as list_id,
-                ( ol.generate_description_id IS NOT NULL AND ol.generate_description_status = 0 AND ol.generate_description_date < NOW() - INTERVAL 24 HOUR ) AS expired_description,
-                ( ol.translate_id IS NOT NULL AND ol.translate_status = 0 AND ol.translate_date < NOW() - INTERVAL 24 HOUR ) AS expired_translation,
-                ( ol.metatags_id IS NOT NULL AND ol.metatags_status = 0 AND ol.metatags_date < NOW() - INTERVAL 24 HOUR ) AS expired_metatags
-            FROM (";
-
-        //Only if translation is enabled
-        if($translation_status)
-        {
-            $sql .= "SELECT 'attribute_group' as resource, a.attribute_group_id AS resource_id
-                FROM " . DB_PREFIX . "attribute_description as ad
-                JOIN " . DB_PREFIX . "attribute as a ON a.attribute_id = ad.attribute_id
-                WHERE ad.language_id = {$this->from_language_id}
-            UNION
-                SELECT 'option' as resource, o.option_id as resource_id
-                FROM " . DB_PREFIX . "option_description as od
-                JOIN " . DB_PREFIX . "option as o ON o.option_id = od.option_id
-                WHERE od.language_id = {$this->from_language_id}
-            UNION ";
+        if ($generate_seo_status) {
+            $resources = array_merge($resources, $generate_seo_for);
         }
 
-        $sql .= "SELECT 'category' as resource, cd.category_id as resource_id
-                FROM " . DB_PREFIX . "category_description as cd
-                JOIN " . DB_PREFIX . "category as c ON c.category_id = cd.category_id
-                WHERE cd.language_id = {$this->from_language_id} {$cwhere}
-            UNION
-                SELECT 'product' as resource, p.product_id as resource_id
-                FROM " . DB_PREFIX . "product as p
-                JOIN " . DB_PREFIX . "product_description as pd ON p.product_id = pd.product_id
-                where pd.language_id = {$this->from_language_id} {$pwhere}
-        ) as r
-        LEFT JOIN " . DB_PREFIX . "ovesio_list as ol ON ol.resource = r.resource AND ol.resource_id = r.resource_id AND ol.lang = '{$language}'
-        WHERE
-            ol.id IS NULL OR";
-
-        $where_sql = [];
-        if($description_status)
-        {
-            $where_sql[] = "( ol.generate_description_id IS NULL AND ol.`resource` IN ('product', 'category') ) OR
-            ( ol.generate_description_id IS NOT NULL AND ol.generate_description_status = 0 AND ol.generate_description_date < NOW() - INTERVAL 24 HOUR )";
+        if ($translate_status) {
+            $resources = array_merge($resources, array_keys($translate_for));
         }
 
-        if($translation_status)
-        {
-            $where_sql[] = "( ol.translate_id IS NULL ) OR
-            ( ol.translate_id IS NOT NULL AND ol.translate_status = 0 AND ol.translate_date < NOW() - INTERVAL 24 HOUR )";
+        $send_disabled_categories = 0;
+        $send_disabled_categories += !empty($generate_content_include_disabled['category']);
+        $send_disabled_categories += !empty($generate_seo_include_disabled['category']);
+        $send_disabled_categories += !empty($translate_include_disabled['category']);
+
+        $send_disabled_products = 0;
+        $send_disabled_products += !empty($generate_content_include_disabled['product']);
+        $send_disabled_products += !empty($generate_seo_include_disabled['product']);
+        $send_disabled_products += !empty($translate_include_disabled['product']);
+
+        $send_stock_0_products = 0;
+        $send_stock_0_products += !empty($generate_content_stock_0);
+        $send_stock_0_products += !empty($generate_seo_stock_0);
+        $send_stock_0_products += !empty($translate_stock_0);
+
+
+        $union = [];
+
+        if ($translate_status) {
+            if (!$resource_type || $resource_type == 'attribute_group') {
+                $attributes_sql = "SELECT 'attribute_group' as resource, a.attribute_group_id AS resource_id
+                    FROM " . DB_PREFIX . "attribute_description as ad
+                    JOIN " . DB_PREFIX . "attribute as a ON a.attribute_id = ad.attribute_id
+                    WHERE ad.language_id = '{$this->default_language_id}'";
+
+                    if ($resource_id) {
+                        $attributes_sql .= " AND a.attribute_group_id = '" . (int)$resource_id . "'";
+                    }
+
+                $union[] = $attributes_sql;
+            }
+
+            if (!$resource_type || $resource_type == 'option') {
+                $options_sql = "SELECT 'option' as resource, o.option_id as resource_id
+                    FROM " . DB_PREFIX . "option_description as od
+                    JOIN " . DB_PREFIX . "option as o ON o.option_id = od.option_id
+                    WHERE od.language_id = '{$this->default_language_id}'";
+
+                    if ($resource_id) {
+                        $options_sql .= " AND o.option_id = '" . (int)$resource_id . "'";
+                    }
+
+                $union[] = $options_sql;
+            }
         }
 
-        if($metatags_status)
-        {
-            $where_sql[] = "( ol.metatags_id IS NULL ) OR
-            ( ol.metatags_id IS NOT NULL AND ol.metatags_status = 0 AND ol.metatags_date < NOW() - INTERVAL 24 HOUR )";
+        if (in_array('categories', $resources)) {
+            if (!$resource_type || $resource_type == 'category') {
+                $categories_sql = "SELECT 'category' as resource, cd.category_id as resource_id
+                    FROM " . DB_PREFIX . "category_description as cd
+                    JOIN " . DB_PREFIX . "category as c ON c.category_id = cd.category_id
+                    WHERE cd.language_id = '{$this->default_language_id}'";
+
+                    if ($send_disabled_categories == 0) {
+                        $categories_sql .= " AND c.status = 1";
+                    }
+
+                    if ($resource_id) {
+                        $categories_sql .= " AND cd.category_id = '" . (int)$resource_id . "'";
+                    }
+
+                $union[] = $categories_sql;
+            }
         }
 
-        if(empty($where_sql)){
+        if (in_array('products', $resources)) {
+            if (!$resource_type || $resource_type == 'product') {
+                $products_sql = "SELECT 'product' as resource, p.product_id as resource_id
+                    FROM " . DB_PREFIX . "product as p
+                    JOIN " . DB_PREFIX . "product_description as pd ON p.product_id = pd.product_id
+                    where pd.language_id = '{$this->default_language_id}'";
+
+                    if ($send_disabled_products == 0) {
+                        $products_sql .= " AND p.status = 1";
+                    }
+
+                    if ($send_stock_0_products == 0) {
+                        $products_sql .= " AND p.quantity > '0'";
+                    }
+
+                    if ($resource_id) {
+                        $products_sql .= " AND pd.product_id = '" . (int)$resource_id . "'";
+                    }
+
+                $union[] = $products_sql;
+            }
+        }
+
+        if (!$union) {
             return [];
         }
 
-        $sql .= implode(' OR ', $where_sql);
+        $language_settings = (array) $this->config->get($this->module_key . '_language_settings');
 
-        $sql .= " LIMIT 50";
+        $translate_languages = [];
+        foreach ($language_settings as $lang_id => $ls) {
+            if (!empty($ls['translate']) && !empty($ls['code'])) {
+                $translate_languages[] = $ls['code'];
+            }
+        }
+
+        sort($translate_languages);
+
+        $translate_languages_hash = implode(',', $translate_languages);
+
+        $union_sql = "\n(" . implode(") \nUNION (", $union) . ')';
+
+        /**
+         * Select unstarted activities, or started and not finished activities
+         */
+        $sql = "SELECT
+            r.`resource`,
+            r.resource_id
+            FROM ($union_sql) as r
+            LEFT JOIN " . DB_PREFIX . "ovesio_activity as ova ON ova.resource_type = r.resource AND ova.resource_id = r.resource_id
+            GROUP BY r.`resource`, r.resource_id";
+
+            $having = [];
+
+            $having[] = "ova.stale = 1";
+
+            if ($translate_status) {
+                $having[] = "GROUP_CONCAT(IF (ova.activity_type = 'translate', ova.lang, null) ORDER BY ova.lang SEPARATOR ',') != '$translate_languages_hash'";
+                $having[] = "COUNT(if (ova.activity_type = 'translate', 1, null)) = 0";
+            }
+
+            if ($generate_content_status) {
+                $having[] = "COUNT(if (ova.activity_type = 'generate_content', 1, null)) = 0";
+            }
+
+            if ($generate_seo_status) {
+                $having[] = "COUNT(if (ova.activity_type = 'generate_seo', 1, null)) = 0";
+            }
+
+            if ($having) {
+                $sql .= " HAVING " . implode(' OR ', $having);
+            }
+
+            $sql .= " ORDER BY RAND() LIMIT $limit";
+
 
         $query = $this->db->query($sql);
 
-        return $query->rows;
+        $activities = [];
+        foreach ($query->rows as $row) {
+            $key = $row['resource'] . '/' . $row['resource_id'];
+
+            $activities[$key] = [
+                'generate_content' => null,
+                'generate_seo'     => null,
+                'translate'        => [],
+            ];
+        }
+
+        if (!$activities) {
+            return [];
+        }
+
+        /**
+         * Update current progress
+         */
+        $conditions_sql = [];
+        foreach ($query->rows as $row) {
+            $conditions_sql[] = "(resource_type = '{$row['resource']}' AND resource_id = '{$row['resource_id']}')";
+        }
+
+        $conditions_sql = implode(' OR ', $conditions_sql);
+
+        // am obtinut lista elementelor, acum trebuie sa le obtinem la fiecare si activitatile parcurse
+        $sql = "SELECT id, resource_type, resource_id, activity_type, lang, activity_id, hash, status, updated_at FROM " . DB_PREFIX . "ovesio_activity WHERE $conditions_sql";
+
+        $query = $this->db->query($sql);
+
+        foreach ($query->rows as $row) {
+            $key = $row['resource_type'] . '/' . $row['resource_id'];
+
+            if (is_array($activities[$key][$row['activity_type']])) { // translate
+                $activities[$key][$row['activity_type']][] = $row;
+            } else {
+                $activities[$key][$row['activity_type']] = $row;
+            }
+        }
+
+        return $activities;
     }
 
-    public function updateExpired($id, $type) {
-        $this->db->query("UPDATE " . DB_PREFIX . "ovesio_list SET {$type}_id = NULL, {$type}_hash = NULL, {$type}_date = NULL, {$type}_status = 0 WHERE id = " . (int) $id);
+    public function getActivityById($id)
+    {
+        $query = $this->db->query("SELECT * FROM " . DB_PREFIX . "ovesio_activity WHERE id = " . (int) $id);
+
+        return $query->row;
     }
 }
