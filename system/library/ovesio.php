@@ -1,9 +1,9 @@
 <?php
 
-require_once(modification($_SERVER['DOCUMENT_ROOT'] . '/catalog/model/module/ovesio.php'));
+require_once(modification($_SERVER['DOCUMENT_ROOT'] . '/catalog/model/extension/module/ovesio.php'));
 require_once(__DIR__ . '/ovesio/sdk/autoload.php');
 
-use Ovesio\Client;
+use Ovesio\OvesioAI;
 use Ovesio\QueueHandler;
 
 class Ovesio extends Model
@@ -68,18 +68,15 @@ class Ovesio extends Model
         $options['server_url'] = defined('HTTPS_CATALOG') ? HTTPS_CATALOG : (defined('HTTPS_SERVER') ? HTTPS_SERVER : '');
         $options['default_language_id'] = $this->default_language_id;
 
-        $api = new Client(
-            (string)$this->config->get($this->module_key . '_api_url'),
-            (string)$this->config->get($this->module_key . '_api_token')
-        );
+        $api = new OvesioAI((string) $this->config->get($this->module_key . '_api_token'));
 
-        $model = new ModelModuleOvesio($this->registry);
+        $model = new ModelExtensionModuleOvesio($this->registry);
 
         return new QueueHandler(
             $model,
             $api,
             $options,
-            new Log($this->config->get('error_filename'))
+            new Log('ovesio_queue.log')
         );
     }
 }

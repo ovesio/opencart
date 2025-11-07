@@ -298,7 +298,7 @@ ovesio.updateActivityStatus = function(activityId, status) {
     status: status
   }).then((res) => {
     if (res.status == 'completed') {
-      document.querySelector('#buttonStatus' + activityId).classList.add('ov-hidden');
+      // document.querySelector('#buttonStatus' + activityId).classList.add('ov-hidden');
       document.querySelector('#buttonResponse' + activityId).classList.remove('ov-hidden');
 
       let old_status = document.querySelector('#buttonStatus' + activityId).closest('td').querySelector('.ov-status-badge');
@@ -310,6 +310,13 @@ ovesio.updateActivityStatus = function(activityId, status) {
 
       old_status.parentNode.replaceChild(new_status, old_status);
     }
+
+    // Add blink effect
+    const status_badge = document.querySelector('#buttonResponse' + activityId).closest('td').querySelector('.ov-status-badge');
+    status_badge.style.animation = 'blink 0.8s ease-in-out 3';
+    setTimeout(() => {
+      delete status_badge.style.animation;
+    }, 4);
 
     button.disabled = false;
     svg.classList.remove('ov-spin');

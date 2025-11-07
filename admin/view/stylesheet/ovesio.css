@@ -124,6 +124,12 @@ button * {
   padding: 1rem;
 }
 
+#workflow_cards .ov-card-body::after {
+  display: block;
+  content: "";
+  height: 30px;
+}
+
 .ov-modal-dialog .ov-card-body {
   padding: 1.5rem;
 }
@@ -142,6 +148,16 @@ button * {
   background-color: rgba(0, 0, 0, 0.03);
   border-top: 1px solid rgba(0, 0, 0, 0.125);
   border-radius: 0 0 calc(0.375rem - 1px) calc(0.375rem - 1px);
+}
+
+.ov-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: absolute;
+  bottom: 0px;
+  width: calc(100% - 2rem);
+  gap: 1rem;
 }
 
 .ov-card-title {
@@ -246,7 +262,7 @@ button * {
 }
 
 .ov-feedback-container {
-  height: 30px;
+  height: 50px;
 }
 
 /* Form Control */
@@ -971,13 +987,6 @@ select.ov-form-control-lg {
 .ov-bullet-amber { background-color: #ffc107; }
 .ov-bullet-grey { background-color: #607d8b; }
 
-/* Edit button positioning */
-.ov-edit-button {
-  position: absolute;
-  bottom: 1rem;
-  right: 1rem;
-}
-
 /* Modal styles */
 .ov-modal {
   display: none;
@@ -1427,7 +1436,7 @@ select.ov-form-control-lg {
   margin-top: 0.125rem;
 }
 
-.ov-alert-content {
+.ov-alert-content, .ov-feedback-container {
   flex: 1;
 }
 
@@ -1678,6 +1687,10 @@ select.ov-form-control-lg {
   border-radius: 0.375rem;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.ov-table thead th {
+  white-space: nowrap;
 }
 
 .ov-table-header {
@@ -2504,4 +2517,18 @@ select.ov-form-control-lg {
   justify-content: space-between;
   align-items: center;
   margin-top: 1rem;
+}
+
+/* ================================
+   BLINK ANIMATION
+   ================================ */
+
+/* Blink effect for status updates */
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }

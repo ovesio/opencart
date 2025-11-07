@@ -2,6 +2,19 @@
 
 namespace Ovesio;
 
+/**
+ * QueueHandler
+ *
+ * This class handles queue operations such as enqueueing, dequeueing,
+ * and processing queued items. It manages the lifecycle of items in
+ * the queue and provides methods for interacting with the queue system.
+ *
+ * Common responsibilities might include:
+ * - Adding items to the queue
+ * - Retrieving items from the queue
+ * - Processing queued jobs or tasks
+ * - Managing queue priorities or delays
+ */
 class QueueHandler
 {
     private $model;
@@ -10,18 +23,22 @@ class QueueHandler
     private $log;
     private $debug = [];
 
-    private $request_data = [];
-
     /**
      * The list of activities that will be processed in order of priority
      */
     private $activity_groups = [
         'generate_content' => [],
         'generate_seo'     => [],
-        'translate'        => []
+        'translate'        => [],
     ];
 
-    public function __construct($model, Client $api, $options = [], $log = null)
+    private $activity_hash = [
+        'generate_content' => [],
+        'generate_seo'     => [],
+        'translate'        => [],
+    ];
+
+    public function __construct($model, OvesioAI $api, $options = [], $log = null)
     {
         $this->model = $model;
         $this->api = $api;
@@ -62,9 +79,14 @@ class QueueHandler
      *
      * @return void
      */
-    public function debug($resource, $resource_id, $event_type, $message)
+    public function debug($resource, $resource_ids, $event_type, $code, $status = '')
     {
-        $this->debug[] = "[{$event_type}] {$resource}: " . implode(',', (array) $resource_id) . " - " . $message;
+        foreach ((array) $resource_ids as $resource_id) {
+            $this->debug["$resource/$resource_id"][$event_type] = [
+                'code'   => $code,
+                'status' => $status
+            ];
+        }
     }
 
     /**
@@ -74,7 +96,76 @@ class QueueHandler
      */
     public function showDebug()
     {
-        echo "<pre>" . print_r($this->debug, true) . "</pre>";
+        if (empty($this->debug)) {
+            echo "<p>No debug information available.</p>";
+            return;
+        }
+
+        echo "<table border='1' cellpadding='8' cellspacing='0' style='border-collapse: collapse; margin: 20px 0; font-family: monospace;'>";
+        echo "<thead>";
+        echo "<tr style='background-color: #333; color: #fff;'>";
+        echo "<th>Resource</th>";
+        echo "<th>Generate Content</th>";
+        echo "<th>Generate SEO</th>";
+        echo "<th>Translate</th>";
+        echo "</tr>";
+        echo "</thead>";
+        echo "<tbody>";
+
+        $code_colors = [
+            'not_found'         => '#999',      // Gray - initial state
+            'new'               => '#0066cc',   // Blue - new item
+            'changed'           => '#ff9800',   // Orange - content changed
+            'unchanged'         => '#666',      // Dark gray - no changes
+            'min_length_not_met'=> '#9c27b0',   // Purple - validation issue
+            'translate'         => '#4caf50',   // Green - ready for translation
+            'skipped'           => '#ff5722',   // Deep orange - skipped due to settings
+        ];
+
+        foreach ($this->debug as $resource => $events) {
+            echo "<tr>";
+            echo "<td style='font-weight: bold;'>{$resource}</td>";
+
+            // Generate Content column
+            if (isset($events['generate_content'])) {
+                $code   = $events['generate_content']['code'];
+                $status = $events['generate_content']['status'];
+                $color = isset($code_colors[$code]) ? $code_colors[$code] : '#000';
+                echo "<td style='color: {$color};'>{$code} {$status}</td>";
+            } else {
+                echo "<td><span style='color: #999;'>-</span></td>";
+            }
+
+            // Generate SEO column
+            if (isset($events['generate_seo'])) {
+                $code   = $events['generate_seo']['code'];
+                $status = $events['generate_seo']['status'];
+                $color = isset($code_colors[$code]) ? $code_colors[$code] : '#000';
+                echo "<td style='color: {$color};'>{$code} {$status}</td>";
+            } else {
+                echo "<td><span style='color: #999;'>-</span></td>";
+            }
+
+            // Translate column
+            if (isset($events['translate'])) {
+                $code = $events['translate']['code'];
+                $status = $events['translate']['status'];
+                $color = isset($code_colors[$code]) ? $code_colors[$code] : '#000';
+                echo "<td style='color: {$color};'>{$code} {$status}</td>";
+            } else {
+                echo "<td><span style='color: #999;'>-</span></td>";
+            }
+
+            echo "</tr>";
+        }
+
+        echo "</tbody>";
+        echo "</table>";
+    }
+
+    public function getDebug()
+    {
+        return $this->debug;
     }
 
     /**
@@ -93,34 +184,33 @@ class QueueHandler
         return $data;
     }
 
-    protected function ignoreMoveOnNextEvent($resource_type, $resource_ids, $activity_type, $message = '')
+    protected function ignoreMoveOnNextEvent($resource_type, $resource_ids, $activity_type, $message = '', $status = 'completed', $request = null)
     {
+        if ($activity_type == 'translate') {
+            return;
+        }
+
         $default_language = $this->getOption('default_language');
         $resource_ids     = (array) $resource_ids;
 
         foreach ($resource_ids as $resource_id) {
-            $this->model->addList([
+            $list_item = [
                 'resource_type' => $resource_type,
                 'resource_id'   => $resource_id,
                 'lang'          => $default_language,
                 'activity_type' => $activity_type,
-                'status'        => 'completed',
                 'message'       => $message,
+                'request'       => $request ? json_encode($request) : null,
                 'stale'         => 0,
                 'updated_at'    => date('Y-m-d H:i:s')
-            ]);
+            ];
+
+            if ($status) {
+                $list_item['status'] = $status;
+            }
+
+            $this->model->addList($list_item);
         }
-    }
-
-    private function getRefedRequestContents()
-    {
-        $requests = [];
-
-        foreach ($this->request_data['data'] as $item) {
-            $requests[$item['ref']] = $item['content'];
-        }
-
-        return $requests;
     }
 
     /*********************************** GENERATE CONTENT ***********************************/
@@ -143,8 +233,9 @@ class QueueHandler
 
         foreach ($activities as $resource => $started_activity) {
             if ($started_activity && $started_activity['status'] == 'started') {
-                unset($this->activity_groups['generate_seo'][$resource]);
-                unset($this->activity_groups['translate'][$resource]);
+                list($resource_type, $resource_id) = explode('/', $resource);
+                $this->debug($resource_type, $resource_id, 'generate_content', 'in_progress', 'started');
+                $this->discardNextEvents('generate_content', $resource);
                 continue;
             }
 
@@ -157,41 +248,52 @@ class QueueHandler
             }
         }
 
+        $hash         = $this->getOption('hash');
+        $server       = $this->getOption('server_url', '');
+        $workflow     = $this->getOption('generate_content_workflow');
+        $callback_url = $server . 'index.php?route=extension/module/ovesio/callback&type=generate_content&hash=' . $hash;
+        $to_lang      = $this->getOption('default_language');
+
+        $request = $this->api->generateDescription()
+        ->workflow($workflow['id'])
+        ->to($to_lang)
+        ->callbackUrl($callback_url);
+
         if (!empty($product_activities)) {
             if (!empty($generate_content_for['products'])) {
-                $this->pushGenerateProductDescriptionRequests($product_activities, !empty($generate_content_include_disabled['products']), $send_stock_0_products);
+                $this->pushGenerateProductDescriptionRequests($request, $product_activities, !empty($generate_content_include_disabled['products']), $send_stock_0_products);
             }
         }
 
         if (!empty($category_activities)) {
             if (!empty($generate_content_for['categories'])) {
-                $this->pushGenerateCategoryDescriptionRequests($category_activities, !empty($generate_content_include_disabled['categories']));
+                $this->pushGenerateCategoryDescriptionRequests($request, $category_activities, !empty($generate_content_include_disabled['categories']));
             }
         }
 
-        if (empty($this->request_data['data'])) {
+        if (!$request->getData()) {
             return;
         }
 
-        // common conditions
-        $_requests = $this->getRefedRequestContents();
-        $hash      = $this->getOption('hash');
-        $server    = $this->getOption('server_url', '');
-
-        $request = $this->request_data;
-        $request['callback_url'] = $server . 'index.php?route=module/ovesio/callback&type=generate_content&hash=' . $hash;
-        $request['to'] = $this->getOption('default_language');
-
-        $response = $this->api->generateContent($request);
+        $request_data = array_column($request->getData(), 'content', 'ref');
 
         // unset further processing for these resources
-        foreach ($_requests as $_resource => $item) {
-            unset($this->activity_groups['generate_seo'][$_resource]);
-            unset($this->activity_groups['translate'][$_resource]);
+        foreach ($request_data as $_resource => $item) {
+            $this->discardNextEvents('generate_content', $_resource);
         }
+
+        try {
+            $response = $request->request();
+        } catch (\Exception $e) {
+            return $this->log->write('Ovesio QueueHandler generate content error: ' . $e->getMessage());
+        }
+
+        $response = json_decode(json_encode($response), true);
 
         if (!empty($response['success'])) {
             foreach ($response['data'] as $item) {
+                $hash = $this->activity_hash['generate_content'][$item['ref']];
+
                 list($resource_type, $resource_id) = explode('/', $item['ref']);
 
                 $this->model->addList([
@@ -202,25 +304,26 @@ class QueueHandler
                     'activity_id'   => $item['id'],
                     'hash'          => $hash,
                     'status'        => 'started',
-                    'request'       => json_encode($_requests[$item['ref']]),
+                    'request'       => json_encode($request_data[$item['ref']]),
                     'response'      => json_encode($item),
                     'stale'         => 0,
                     'updated_at'    => date('Y-m-d H:i:s')
                 ]);
             }
         } else {
-            $this->log->write('Ovesio QueueHandler generate content error: ' . print_r($response, true));
+            $this->massLogErrors($response, $request->getData(), 'generate_content');
         }
     }
 
-    protected function pushGenerateProductDescriptionRequests($activities, $include_disabled = false, $include_stock_0 = true)
+    protected function pushGenerateProductDescriptionRequests($request, $activities, $include_disabled = false, $include_stock_0 = true)
     {
         $product_ids = array_keys($activities);
+        $this->debug('product', $product_ids, 'generate_content', 'not_found'); // we make presence known on each iteration
 
         $products = $this->model->getProducts($product_ids, $include_disabled, $include_stock_0);
 
         if (empty($products)) {
-            $this->ignoreMoveOnNextEvent('product', $product_ids, 'generate_content', "Not found, disabled or out of stock");
+            $this->ignoreMoveOnNextEvent('product', $product_ids, 'generate_content', "Not found, disabled or out of stock", 'skipped');
             return;
         }
 
@@ -263,47 +366,56 @@ class QueueHandler
                 $push['content']['additional'][] = $attributes[$attribute_id] . ': ' . $attribute_text;
             }
 
+            foreach ($push['content'] as $k => $v) {
+                if (is_array($v)) {
+                    sort($push['content'][$k]);
+                }
+            }
+
             // remove description from hash to avoid recreating it everytime
             $_push = $push;
             if (!empty($_push['content']['description'])) {
                 unset($_push['content']['description']);
             }
 
-            $hash = md5(json_encode($_push));
+            $hash = $this->contentHash($_push['content']);
+            $this->activity_hash['generate_content'][$push['ref']] = $hash;
 
-            if (!empty($activities[$product['product_id']])) {
-                $old_hash = $activities[$product['product_id']]['hash'];
+            if (!$this->activityIsStaled($activities, 'product', $product['product_id'], $hash, 'generate_content')) {
+                continue;
+            }
 
-                if ($this->getOption('generate_content_live_update') || $old_hash[$product['product_id']] == $hash) {
-                    $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "One time only or the hash did not changed");
-                    continue;
+            $description_lengths_min = $this->getOption('generate_content_when_description_length');
+
+            $payload_length = 0;
+            foreach ($_push['content'] as $key => $val) {
+                if (in_array($key, ['name', 'description'])) {
+                    $payload_length += strlen($val);
                 }
             }
 
             // The description is longer than minimum, send to translation
-            if (strlen($_description) > $this->getOption('minimum_product_descrition', 0)) {
-                $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "Minimum description length not met");
+            if (strlen($_description) > $description_lengths_min['products'] || $payload_length < 25) { // avoid min length api limitation
+                $this->debug('product', $product['product_id'], 'generate_content', 'min_length_not_met');
+                $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "Minimum description length not met", 'skipped');
                 continue;
             }
 
-            $this->request_data['data'][] = $push;
-        }
+            $this->discardNextEvents('generate_description', $push['ref']);
 
-        if (!empty($this->request_data['data'])) {
-            $this->debug('product', str_replace('product/', '', array_column($this->request_data['data'], 'ref')), 'generate_content', "Prepare data");
-        } else {
-            $this->ignoreMoveOnNextEvent('product', $product_ids, 'generate_content', "No data left to process");
+            $request->data($push['content'], $push['ref']);
         }
     }
 
-    protected function pushGenerateCategoryDescriptionRequests($activities, $include_disabled = false)
+    protected function pushGenerateCategoryDescriptionRequests($request, $activities, $include_disabled = false)
     {
         $category_ids = array_keys($activities);
+        $this->debug('category', $category_ids, 'generate_content', 'not_found'); // we make presence known on each iteration
 
         $categories = $this->model->getCategories($category_ids, $include_disabled);
 
         if (empty($categories)) {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_content', "Not found or disabled");
+            $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_content', "Not found or disabled", 'skipped');
             return;
         }
 
@@ -327,29 +439,33 @@ class QueueHandler
                 unset($_push['content']['description']);
             }
 
-            $hash = md5(json_encode($_push));
+            $hash = $this->contentHash($_push['content']);
+            $this->activity_hash['generate_content'][$push['ref']] = $hash;
 
-            if (!empty($activities[$category['category_id']])) {
-                $old_hash = $activities[$category['category_id']]['hash'];
+            if (!$this->activityIsStaled($activities, 'category', $category['category_id'], $hash, 'generate_content')) {
+                continue;
+            }
 
-                if ($this->getOption('create_description_one_time_only') || $old_hash == $hash) {
-                    $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "One time only or the hash did not changed");
-                    continue;
+            $payload_length = 0;
+            foreach ($_push['content'] as $key => $val) {
+                if (in_array($key, ['name', 'description'])) {
+                    $payload_length += strlen($val);
                 }
             }
 
             // The description is longer than minimum, send to translation
-            if (strlen($_description) > $this->getOption('minimum_category_descrition', 0)) {
-                $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "Minimum description length not met");
+            if (strlen($_description) > $this->getOption('minimum_category_descrition', 0) || $payload_length <= 25) { // avoid min length api limitation
+                $this->debug('category', $category['category_id'], 'generate_content', 'min_length_not_met');
+                $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "Minimum description length not met", 'skipped');
                 continue;
             }
 
-            $this->request_data['data'][] = $push;
+            $this->discardNextEvents('generate_description', $push['ref']);
+
+            $request->data($push['content'], $push['ref']);
         }
 
-        if (!empty($this->request_data['data'])) {
-            $this->debug('category', str_replace('category/', '', array_column($this->request_data['data'], 'ref')), 'generate_content', "Prepare data");
-        } else {
+        if (!$request->getData()) {
             $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_content', "No data left to process");
         }
     }
@@ -374,8 +490,9 @@ class QueueHandler
 
         foreach ($activities as $resource => $started_activity) {
             if ($started_activity && $started_activity['status'] == 'started') {
-                unset($this->activity_groups['generate_seo'][$resource]);
-                unset($this->activity_groups['translate'][$resource]);
+                list($resource_type, $resource_id) = explode('/', $resource);
+                $this->debug($resource_type, $resource_id, 'generate_seo', 'in_progress', 'started');
+                $this->discardNextEvents('generate_seo', $resource);
                 continue;
             }
 
@@ -388,41 +505,52 @@ class QueueHandler
             }
         }
 
+        $hash         = $this->getOption('hash');
+        $server       = $this->getOption('server_url', '');
+        $workflow     = $this->getOption('generate_seo_workflow');
+        $callback_url = $server . 'index.php?route=extension/module/ovesio/callback&type=generate_seo&hash=' . $hash;
+        $to_lang      = $this->getOption('default_language');
+
+        $request = $this->api->generateSeo()
+        ->workflow($workflow['id'])
+        ->to($to_lang)
+        ->callbackUrl($callback_url);
+
         if (!empty($product_activities)) {
             if (!empty($generate_seo_for['products'])) {
-                $this->pushGenerateProductSeoRequests($product_activities, !empty($generate_seo_include_disabled['products']), $send_stock_0_products);
+                $this->pushGenerateProductSeoRequests($request, $product_activities, !empty($generate_seo_include_disabled['products']), $send_stock_0_products);
             }
         }
 
         if (!empty($category_activities)) {
             if (!empty($generate_seo_for['categories'])) {
-                $this->pushGenerateCategorySeoRequests($category_activities, !empty($generate_seo_include_disabled['categories']));
+                $this->pushGenerateCategorySeoRequests($request, $category_activities, !empty($generate_seo_include_disabled['categories']));
             }
         }
 
-        if (empty($this->request_data['data'])) {
+        if (!$request->getData()) {
             return;
         }
 
-        // common conditions
-        $_requests = $this->getRefedRequestContents();
-        $hash      = $this->getOption('hash');
-        $server    = $this->getOption('server_url', '');
-
-        $request = $this->request_data;
-        $request['callback_url'] = $server . 'index.php?route=module/ovesio/callback&type=metatags&hash=' . $hash;
-        $request['to'] = $this->getOption('default_language');
-
-        $response = $this->api->generateSeo($request);
+        $request_data = array_column($request->getData(), 'content', 'ref');
 
         // unset further processing for these resources
-        foreach ($_requests as $_resource => $item) {
-            unset($this->activity_groups['generate_seo'][$_resource]);
-            unset($this->activity_groups['translate'][$_resource]);
+        foreach ($request_data as $_resource => $item) {
+            $this->discardNextEvents('generate_seo', $_resource);
         }
+
+        try {
+            $response = $request->request();
+        } catch (\Exception $e) {
+            return $this->log->write('Ovesio QueueHandler generate SEO error: ' . $e->getMessage());
+        }
+
+        $response = json_decode(json_encode($response), true);
 
         if (!empty($response['success'])) {
             foreach ($response['data'] as $item) {
+                $hash = $this->activity_hash['generate_seo'][$item['ref']];
+
                 list($resource_type, $resource_id) = explode('/', $item['ref']);
 
                 $this->model->addList([
@@ -433,31 +561,33 @@ class QueueHandler
                     'activity_id'   => $item['id'],
                     'hash'          => $hash,
                     'status'        => 'started',
-                    'request'       => json_encode($_requests[$item['ref']]),
+                    'request'       => json_encode($request_data[$item['ref']]),
                     'response'      => json_encode($item),
                     'stale'         => 0,
                     'updated_at'    => date('Y-m-d H:i:s')
                 ]);
             }
         } else {
-            $this->log->write('Ovesio QueueHandler generate SEO error: ' . print_r($response, true));
+            $this->massLogErrors($response, $request->getData(), 'generate_seo');
         }
     }
 
-    protected function pushGenerateProductSeoRequests($activities, $include_disabled = false, $include_stock_0 = true)
+    protected function pushGenerateProductSeoRequests($request, $activities, $include_disabled = false, $include_stock_0 = true)
     {
         $product_ids = array_keys($activities);
 
         $only_for_action = $this->getOption('generate_seo_only_for_action');
 
         if ($only_for_action) {
+            $this->debug('product', $product_ids, 'generate_seo', 'skipped'); // we make presence known on each iteration
             $products = $this->model->getProductsWithDescriptionDependency($product_ids, $include_disabled, $include_stock_0);
         } else {
+            $this->debug('product', $product_ids, 'generate_seo', 'not_found'); // we make presence known on each iteration
             $products = $this->model->getProducts($product_ids, $include_disabled, $include_stock_0);
         }
 
         if (empty($products)) {
-            $this->ignoreMoveOnNextEvent('product', $product_ids, 'metatags', "Not found, disabled or out of stock");
+            $this->ignoreMoveOnNextEvent('product', $product_ids, 'generate_seo', "Not found, disabled or out of stock", 'skipped');
             return;
         }
 
@@ -500,41 +630,40 @@ class QueueHandler
                 $push['content']['additional'][] = $attributes[$attribute_id] . ': ' . $attribute_text;
             }
 
-            $hash = md5(json_encode($push));
+            $hash = $this->contentHash($push['content']);
+            $this->activity_hash['generate_seo'][$push['ref']] = $hash;
 
-            if (!empty($activities[$product['product_id']])) {
-                $old_hash = $activities[$product['product_id']]['hash'];
-
-                if ($this->getOption('generate_seo_live_update') || $old_hash[$product['product_id']] == $hash) {
-                    $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'metatags', "One time only or the hash did not changed");
-                    continue;
-                }
+            if (!$this->activityIsStaled($activities, 'product', $product['product_id'], $hash, 'generate_seo')) {
+                continue;
             }
 
-            $this->request_data['data'][] = $push;
+            $this->discardNextEvents('generate_seo', $push['ref']);
+
+            $request->data($push['content'], $push['ref']);
         }
 
-        if (!empty($this->request_data['data'])) {
-            $this->debug('product', str_replace('product/', '', array_column($this->request_data['data'], 'ref')), 'metatags', "Prepare data");
-        } else {
-            $this->ignoreMoveOnNextEvent('product', $product_ids, 'metatags', "No data left to process");
+        if (!$request->getData()) {
+            $this->ignoreMoveOnNextEvent('product', $product_ids, 'generate_seo', "No data left to process", 'skipped');
+            $this->debug('product', str_replace('product/', '', array_column($request->getData(), 'ref')), 'generate_seo', "Prepare data");
         }
     }
 
-    protected function pushGenerateCategorySeoRequests($activities, $include_disabled = false)
+    protected function pushGenerateCategorySeoRequests($request, $activities, $include_disabled = false)
     {
         $category_ids = array_keys($activities);
 
         $only_for_action = $this->getOption('generate_seo_only_for_action');
 
         if ($only_for_action) {
+            $this->debug('category', $category_ids, 'generate_seo', 'skipped', 'needs_content_generation'); // we make presence known on each iteration
             $categories = $this->model->getCategoriesWithDescriptionDependency($category_ids, $include_disabled);
         } else {
+            $this->debug('category', $category_ids, 'generate_seo', 'not_found'); // we make presence known on each iteration
             $categories = $this->model->getCategories($category_ids, $include_disabled);
         }
 
         if (empty($categories)) {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'metatags', "Not found or disabled");
+            $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_seo', "Not found or disabled", 'skipped');
             return;
         }
 
@@ -552,24 +681,20 @@ class QueueHandler
                 $push['content']['description'] = $category['description'];
             }
 
-            $hash = md5(json_encode($push));
+            $hash = $this->contentHash($push['content']);
+            $this->activity_hash['generate_seo'][$push['ref']] = $hash;
 
-            if (!empty($activities[$category['category_id']])) {
-                $old_hash = $activities[$category['category_id']]['hash'];
-
-                if ($this->getOption('generate_seo_live_update') || $old_hash[$category['category_id']] == $hash) {
-                    $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'metatags', "One time only or the hash did not changed");
-                    continue;
-                }
+            if (!$this->activityIsStaled($activities, 'category', $category['category_id'], $hash, 'generate_seo')) {
+                continue;
             }
 
-            $this->request_data['data'][] = $push;
+            $this->discardNextEvents('generate_seo', $push['ref']);
+
+            $request->data($push['content'], $push['ref']);
         }
 
-        if (!empty($this->request_data['data'])) {
-            $this->debug('category', str_replace('category/', '', array_column($this->request_data['data'], 'ref')), 'metatags', "Prepare data");
-        } else {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'metatags', "No data left to process");
+        if (!$request->getData()) {
+            $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_seo', "No data left to process", 'skipped');
         }
     }
 
@@ -601,6 +726,8 @@ class QueueHandler
         foreach ($activities as $resource => $started_translate_activities) {
             foreach ($started_translate_activities as $started_activity) {
                 if ($started_activity['status'] == 'started') {
+                    list($resource_type, $resource_id) = explode('/', $resource);
+                    $this->debug($resource_type, $resource_id, 'translate', 'in_progress', 'started');
                     continue 2; // we do not start new translations until the current translation session on the respective resource is finished
                 }
             }
@@ -620,75 +747,86 @@ class QueueHandler
             }
         }
 
+        $hash         = $this->getOption('hash');
+        $server       = $this->getOption('server_url', '');
+        $workflow     = $this->getOption('translate_workflow');
+        $callback_url = $server . 'index.php?route=extension/module/ovesio/callback&type=translate&hash=' . $hash;
+        $from_lang    = $this->getOption('default_language', 'en');
+
+        $languages = $this->getOption('language_settings', []);
+
+        $to_langs = [];
+        $conditions = [];
+
+        foreach ($languages as $language) {
+            if (empty($language['translate']) || $language['code'] === $from_lang || empty($language['translate_from'])) continue;
+
+            $to_langs[] = $language['code'];
+
+            // apply conditions in case the from language is not the default language
+            if ($from_lang != $language['translate_from']) {
+                $conditions[$language['code']] = $language['translate_from'];
+            }
+        }
+
+        $request = $this->api->translate()
+        ->workflow($workflow['id'])
+        ->from($from_lang)
+        ->to($to_langs)
+        ->conditions($conditions)
+        ->callbackUrl($callback_url);
+
         if (!empty($attribute_group_activities)) {
-            if (!empty($translate_for['attribute_groups'])) {
-                $this->pushTranslateAttributeGroupRequests($attribute_group_activities, !empty($translate_include_disabled['attribute_groups']));
+            if (!empty($translate_for['attributes'])) {
+                $this->pushTranslateAttributeGroupRequests($request, $attribute_group_activities, !empty($translate_include_disabled['attributes']));
             }
         }
 
         if (!empty($attribute_activities)) {
-            if (!empty($translate_for['attribute_groups'])) {
-                $this->pushTranslateAttributeRequests($attribute_activities, !empty($translate_include_disabled['attribute_groups']));
+            if (!empty($translate_for['attributes'])) {
+                $this->pushTranslateAttributeRequests($request, $attribute_activities, !empty($translate_include_disabled['attributes']));
             }
         }
 
         if (!empty($option_activities)) {
             if (!empty($translate_for['options'])) {
-                $this->pushTranslateOptionRequests($option_activities, !empty($translate_include_disabled['options']));
+                $this->pushTranslateOptionRequests($request, $option_activities, !empty($translate_include_disabled['options']));
             }
         }
 
         if (!empty($product_activities)) {
             if (!empty($translate_for['products'])) {
-                $this->pushTranslateProductRequests($product_activities, !empty($translate_include_disabled['products']), $send_stock_0_products);
+                $this->pushTranslateProductRequests($request, $product_activities, !empty($translate_include_disabled['products']), $send_stock_0_products);
             }
         }
 
         if (!empty($category_activities)) {
             if (!empty($translate_for['categories'])) {
-                $this->pushTranslateCategoryRequests($category_activities, !empty($translate_include_disabled['categories']));
+                $this->pushTranslateCategoryRequests($request, $category_activities, !empty($translate_include_disabled['categories']));
             }
         }
 
-        if (empty($this->request_data['data'])) {
+        if (!$request->getData()) {
             return;
         }
 
-        // common conditions
-        $_requests = $this->getRefedRequestContents();
-        $hash      = $this->getOption('hash');
-        $server    = $this->getOption('server_url', '');
+        $request_data = array_column($request->getData(), 'content', 'ref');
 
-        $request = $this->request_data;
-        $request['callback_url'] = $server . 'index.php?route=module/ovesio/callback&type=translate&hash=' . $hash;
-        $request['from']         = $this->getOption('default_language', 'en');
-
-        $languages = $this->getOption('language_settings', []);
-
-        foreach ($languages as $language) {
-            if (empty($language['translate']) || $language['code'] === $request['from'] || empty($language['translate_from'])) continue;
-
-            $request['to'][] = $language['code'];
-
-            // apply conditions in case the from language is not the default language
-            if ($request['from'] != $language['translate_from']) {
-                $request['conditions'][$language['code']] = $language['translate_from'];
-            }
+        try {
+            $response = $request->request();
+        } catch (\Exception $e) {
+            return $this->log->write('Ovesio QueueHandler translate error: ' . $e->getMessage());
         }
 
-        $response = $this->api->translate($request);
-
-        // unset further processing for these resources
-        foreach ($_requests as $_resource => $item) {
-            unset($this->activity_groups['generate_seo'][$_resource]);
-            unset($this->activity_groups['translate'][$_resource]);
-        }
+        $response = json_decode(json_encode($response), true);
 
         if (!empty($response['success'])) {
             foreach ($response['data'] as $item) {
+                $hash = $this->activity_hash['translate'][$item['ref']] ?? '';
+
                 list($resource_type, $resource_id) = explode('/', $item['ref']);
 
-                foreach ($request['to'] as $lang) {
+                foreach ($to_langs as $lang) {
                     $this->model->addList([
                         'resource_type' => $resource_type,
                         'resource_id'   => $resource_id,
@@ -697,7 +835,7 @@ class QueueHandler
                         'activity_id'   => $item['id'],
                         'hash'          => $hash,
                         'status'        => 'started',
-                        'request'       => json_encode($_requests[$item['ref']]),
+                        'request'       => json_encode($request_data[$item['ref']]),
                         'response'      => json_encode($item),
                         'stale'         => 0,
                         'updated_at'    => date('Y-m-d H:i:s')
@@ -705,36 +843,41 @@ class QueueHandler
                 }
             }
         } else {
-            $this->log->write('Ovesio QueueHandler translate error: ' . print_r($response, true));
+            $this->massLogErrors($response, $request->getData(), 'translate');
         }
     }
 
-    protected function pushTranslateCategoryRequests($activities, $include_disabled = false)
+    protected function pushTranslateCategoryRequests($request, $activities, $include_disabled = false)
     {
         $category_ids = array_keys($activities);
 
         $translate_fields = (array) $this->getOption('translate_fields', []);
+        $translate_for = array_filter($translate_fields, function ($item) {
+            return array_filter($item);
+        });
 
-        if (empty($translate_fields['categories'])) {
+        if (empty($translate_for['categories'])) {
             return;
         }
+
+        $category_ids = array_keys($activities);
 
         $translate_fields = $translate_fields['categories'];
 
         $categories = $this->model->getCategories($category_ids, $include_disabled);
 
         if (empty($categories)) {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'translate', "Not found or disabled");
+            $this->ignoreMoveOnNextEvent('category', $category_ids, 'translate', "Not found or disabled", 'skipped');
             return;
         }
-
+// TODO: hash changed check ?
         foreach ($categories as $i => $category) {
             $push = [
                 'ref'     => 'category/' . $category['category_id'],
                 'content' => []
             ];
 
-            foreach ($translate_fields['categories'] as $key => $send) {
+            foreach ($translate_fields as $key => $send) {
                 if (!$send || empty($category[$key])) continue;
 
                 $push['content'][] = [
@@ -744,24 +887,29 @@ class QueueHandler
             }
 
             if (!empty($push['content'])) {
-                $this->request_data['data'][] = $push;
+                $this->debug('category', $category['category_id'], 'translate', 'translate');
+
+                $this->discardNextEvents('translate', $push['ref']);
+
+                $request->data($push['content'], $push['ref']);
             }
         }
 
-        if (!empty($this->request_data['data'])) {
-            $this->debug('category', str_replace('category/', '', array_column($this->request_data['data'], 'ref')), 'translate', "Prepare data");
-        } else {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'translate', "No data left to process");
+        if (!$request->getData()) {
+            $this->ignoreMoveOnNextEvent('category', $category_ids, 'translate', "No data left to process", 'skipped');
         }
     }
 
-    protected function pushTranslateProductRequests($activities, $include_disabled = false, $include_stock_0 = true)
+    protected function pushTranslateProductRequests($request, $activities, $include_disabled = false, $include_stock_0 = true)
     {
         $product_ids = array_keys($activities);
 
         $translate_fields = (array) $this->getOption('translate_fields', []);
+        $translate_for = array_filter($translate_fields, function ($item) {
+            return array_filter($item);
+        });
 
-        if (empty($translate_fields['products'])) {
+        if (empty($translate_for['products'])) {
             return;
         }
 
@@ -770,7 +918,7 @@ class QueueHandler
         $products = $this->model->getProducts($product_ids, $include_disabled, $include_stock_0);
 
         if (empty($products)) {
-            $this->ignoreMoveOnNextEvent('product', $product_ids, 'translate', "Not found, disabled or out of stock");
+            $this->ignoreMoveOnNextEvent('product', $product_ids, 'translate', "Not found, disabled or out of stock", 'skipped');
             return;
         }
 
@@ -813,24 +961,30 @@ class QueueHandler
                 ];
             }
 
-            if (!empty($push['content'])) {
-                $this->request_data['data'][] = $push;
+            if (empty($push['content'])) {
+                continue;
             }
+
+            $hash = $this->contentHash($push['content']);
+            $this->activity_hash['translate'][$push['ref']] = $hash;
+
+            if (!$this->activityIsStaled($activities, 'product', $product['product_id'], $hash, 'translate')) {
+                continue;
+            }
+
+            $this->debug('product', $product['product_id'], 'translate', 'translate');
+
+            $this->discardNextEvents('translate', $push['ref']);
+
+            $request->data($push['content'], $push['ref']);
         }
 
-        if (!empty($this->request_data['data'])) {
-            // Translate large descriptions only with GPT!
-            if (!empty($product['description']) && strlen($product['description']) >= 4000) {
-                $this->request_data['workflow'] = 7; // TODO: scos de pe modulul principal
-            }
-
-            $this->debug('product', str_replace('product/', '', array_column($this->request_data['data'], 'ref')), 'translate', "Prepare data");
-        } else {
+        if (!$request->getData()) {
             $this->ignoreMoveOnNextEvent('product', $product_ids, 'translate', "No data left to process");
         }
     }
 
-    protected function pushTranslateAttributeGroupRequests($activities, $include_disabled = false)
+    protected function pushTranslateAttributeGroupRequests($request, $activities, $include_disabled = false)
     {
         $attribute_group_ids = array_keys($activities);
 
@@ -841,7 +995,7 @@ class QueueHandler
         });
 
         if (empty($translate_for['attributes'])) {
-            $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "Groups and Attributes translation is disabled");
+            $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "Groups and Attributes translation is disabled", 'skipped');
             return;
         }
 
@@ -849,7 +1003,7 @@ class QueueHandler
         $attribute_groups = array_column($attribute_groups, null, 'attribute_group_id');
 
         if (empty($attribute_groups)) {
-            $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "No attribute groups found");
+            $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "No attribute groups found", 'skipped');
             return;
         }
 
@@ -880,16 +1034,27 @@ class QueueHandler
             ];
         }
 
-        $this->request_data['data'] = array_merge($this->request_data['data'] ?? [], array_values($groups));
+        foreach (array_values($groups) as $push) {
+            $hash = $this->contentHash($push['content']);
+            $this->activity_hash['translate'][$push['ref']] = $hash;
 
-        if (!empty($this->request_data['data'])) {
-            $this->debug('attribute_group', str_replace('attribute_group/', '', array_column($this->request_data['data'], 'ref')), 'translate', "Prepare data");
-        } else {
+            if (!$this->activityIsStaled($activities, 'attribute_group', $attribute['attribute_group_id'], $hash, 'translate')) {
+                continue;
+            }
+
+            $this->debug('attribute_group', $push['ref'], 'translate', 'translate');
+
+            $this->discardNextEvents('translate', $push['ref']);
+
+            $request->data($push['content'], $push['ref']);
+        }
+
+        if (!$request->getData()) {
             $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "No data left to process");
         }
     }
 
-    protected function pushTranslateAttributeRequests($activities, $include_disabled = false)
+    protected function pushTranslateAttributeRequests($request, $activities, $include_disabled = false)
     {
         $attribute_ids = array_keys($activities);
 
@@ -900,13 +1065,13 @@ class QueueHandler
         });
 
         if (empty($translate_for['attributes'])) {
-            $this->ignoreMoveOnNextEvent('attribute', $attribute_ids, 'translate', "Groups and Attributes translation is disabled");
+            $this->ignoreMoveOnNextEvent('attribute', $attribute_ids, 'translate', "Groups and Attributes translation is disabled", 'skipped');
             return;
         }
 
         $attribute_groups = $this->model->getAttributeGroups();
         if (empty($attribute_groups)) {
-            $this->ignoreMoveOnNextEvent('attribute', $attribute_ids, 'translate', "No attribute groups found");
+            $this->ignoreMoveOnNextEvent('attribute', $attribute_ids, 'translate', "No attribute groups found", 'skipped');
             return;
         }
 
@@ -941,16 +1106,27 @@ class QueueHandler
             ];
         }
 
-        $this->request_data['data'] = array_merge($this->request_data['data'] ?? [], array_values($groups));
+        foreach (array_values($groups) as $push) {
+            $hash = $this->contentHash($push['content']);
+            $this->activity_hash['translate'][$push['ref']] = $hash;
 
-        if (!empty($this->request_data['data'])) {
-            $this->debug('attribute', str_replace('attribute_group/', '', array_column($this->request_data['data'], 'ref')), 'translate', "Prepare data");
-        } else {
-            $this->ignoreMoveOnNextEvent('attribute', $attribute_ids, 'translate', "No data left to process");
+            if (!$this->activityIsStaled($activities, 'attribute_group', $attribute['attribute_group_id'], $hash, 'translate')) {
+                continue;
+            }
+
+            $this->discardNextEvents('translate', $push['ref']);
+
+            $this->debug('attribute', $attribute['attribute_group_id'], 'translate', 'translate');
+
+            $request->data($push['content'], $push['ref']);
+        }
+
+        if (!$request->getData()) {
+            $this->ignoreMoveOnNextEvent('attribute', $attribute_ids, 'translate', "No data left to process", 'skipped');
         }
     }
 
-    public function pushTranslateOptionRequests($activities, $include_disabled = false)
+    public function pushTranslateOptionRequests($request, $activities, $include_disabled = false)
     {
         $option_ids = array_keys($activities);
 
@@ -961,13 +1137,13 @@ class QueueHandler
         });
 
         if (empty($translate_for['options'])) {
-            $this->ignoreMoveOnNextEvent('option', $option_ids, 'translate', "Options translation is disabled");
+            $this->ignoreMoveOnNextEvent('option', $option_ids, 'translate', "Options translation is disabled", 'skipped');
             return;
         }
 
         $options = $this->model->getOptions($option_ids);
         if (empty($options)) {
-            $this->ignoreMoveOnNextEvent('option', $option_ids, 'translate', "No options found");
+            $this->ignoreMoveOnNextEvent('option', $option_ids, 'translate', "No options found", 'skipped');
             return;
         }
 
@@ -1000,69 +1176,166 @@ class QueueHandler
                 ];
             }
 
-            if (!empty($push['content'])) {
-                $this->request_data['data'][] = $push;
+            if (empty($push['content'])) {
+                continue;
             }
+
+            $hash = $this->contentHash($push['content']);
+            $this->activity_hash['translate'][$push['ref']] = $hash;
+
+            if (!$this->activityIsStaled($activities, 'option', $option['option_id'], $hash, 'translate')) {
+                continue;
+            }
+
+            $this->discardNextEvents('translate', $push['ref']);
+
+            $this->debug('option', $option['option_id'], 'translate', 'translate');
+
+            $request->data($push['content'], $push['ref']);
         }
 
-        if (!empty($this->request_data['data'])) {
-            $this->debug('option', str_replace('option/', '', array_column($this->request_data['data'], 'ref')), 'translate', "Prepare data");
-        } else {
+        if (!$request->getData()) {
             $this->ignoreMoveOnNextEvent('option', $option_ids, 'translate', "No data left to process");
         }
     }
 
-    public function syncActivityStatus($activity_id)
+    // private function triggerCallback($type, $data)
+    // {
+    //     // make a curl POST to self server, without SSL verification
+    //     $server = $this->getOption('server_url', '');
+    //     $url = $server . 'index.php?route=extension/module/ovesio/callback&type=' . $type . '&hash=' . $this->getOption('hash');
+
+    //     $ch = curl_init($url);
+
+    //     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    //     curl_setopt($ch, CURLOPT_POST, true);
+    //     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    //     curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    //         'Content-Type: application/json'
+    //     ]);
+    //     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    //     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    //     $response = curl_exec($ch);
+    //     curl_close($ch);
+
+    //     return $response;
+    // }
+
+    private function massLogErrors($response, $data, $activity_type)
     {
-        $activity = $this->model->getActivityById($activity_id);
+        // gather errors per item index (avoid duplicate)
+        $item_errors = [];
+        foreach ($response['errors'] as $key => $error) {
+            if (stripos($key, 'data.') === 0) {
+                $temp = explode('.', $key);
+                $index = $temp[1];
 
-        $payload = null;
-
-        if ($activity['activity_type'] == 'generate_content') {
-            $response = $this->api->getGenerateContentStatus($activity['activity_id']);
-            $payload = $response['data'] ?? null;
-        } elseif ($activity['activity_type'] == 'generate_seo') {
-            $response = $this->api->getGenerateSeoStatus($activity['activity_id']);
-            $payload = $response['data'] ?? null;
-        } elseif ($activity['activity_type'] == 'translate') {
-            $response = $this->api->getTranslateStatus($activity['activity_id']);
-
-            foreach ($response['data']['data'] as $item) {
-                if ($item['to'] == $activity['lang']) {
-                    $payload = $item;
-                    break;
-                }
+                $item_errors[$index] = $error;
             }
         }
 
-        if ($payload && $payload['status'] == 'completed') {
-            $this->triggerCallback($activity['activity_type'], $payload);
+        $default_language = $this->getOption('default_language');
+
+        foreach ($item_errors as $index => $error) {
+            $request = $data[$index];
+
+            list($resource_type, $resource_id) = explode('/', $request['ref']);
+
+            $this->model->addList([
+                'resource_type' => $resource_type,
+                'resource_id'   => $resource_id,
+                'lang'          => $default_language,
+                'activity_type' => $activity_type,
+                'hash'          => $this->activity_hash[$activity_type][$request['ref']] ?? '',
+                'status'        => 'error',
+                'message'       => $error,
+                'request'       => json_encode($request),
+                'stale'         => 0,
+                'updated_at'    => date('Y-m-d H:i:s')
+            ]);
         }
-
-        $activity = $this->model->getActivityById($activity_id);
-
-        return $activity;
     }
 
-    private function triggerCallback($type, $data)
+    private function activityIsStaled($activities, $resource_type, $resource_id, $hash, $activity_type)
     {
-        // make a curl POST to self server, without SSL verification
-        $server = $this->getOption('server_url', '');
-        $url = $server . 'index.php?route=module/ovesio/callback&type=' . $type . '&hash=' . $this->getOption('hash');
+        if (empty($activities[$resource_id])) {
+            $this->debug($resource_type, $resource_id, $activity_type, 'new');
+            return true;
+        }
 
-        $ch = curl_init($url);
+        $activity = $activities[$resource_id];
 
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json'
-        ]);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        $response = curl_exec($ch);
-        curl_close($ch);
+        if ($activity_type == 'translate') {
+            $activity = reset($activity);
+        }
 
-        return $response;
+        if ($activity['status'] == 'error') {
+            return true; // we have introduced skipped status, so error status may be retried
+        }
+
+        $staled = false;
+        if ($this->getOption("{$activity_type}_live_update")) {
+            $old_hash = $activity['hash'];
+
+            if ($old_hash == $hash) {
+                $this->debug($resource_type, $resource_id, $activity_type, 'unchanged', $activity['status']);
+                $this->ignoreMoveOnNextEvent($resource_type, $resource_id, $activity_type, "Hash did not changed", null);
+            } else {
+                $this->debug($resource_type, $resource_id, $activity_type, 'changed');
+                $staled = true;
+            }
+        } else {
+            $this->debug($resource_type, $resource_id, $activity_type, 'unchanged', $activity['status']);
+            $this->ignoreMoveOnNextEvent($resource_type, $resource_id, $activity_type, "Hash did not changed", null);
+        }
+
+        return $staled;
+    }
+
+    private function discardNextEvents($activity_type, $resource)
+    {
+        if ($activity_type == 'generate_content') {
+            unset($this->activity_groups['generate_content'][$resource]);
+            unset($this->activity_groups['generate_seo'][$resource]);
+            unset($this->activity_groups['translate'][$resource]);
+        }
+
+        if ($activity_type == 'generate_seo') {
+            unset($this->activity_groups['generate_seo'][$resource]);
+            unset($this->activity_groups['translate'][$resource]);
+        }
+
+        if ($activity_type == 'translate') {
+            unset($this->activity_groups['translate'][$resource]);
+        }
+    }
+
+    private function contentHash($data)
+    {
+        foreach ($data as $k => $v) {
+            if (is_array($v)) {
+                sort($data[$k]);
+
+                $data[$k] = implode('___', $data[$k]);
+            }
+        }
+
+        $separator = ';;;';
+        $hash = [];
+        foreach ($data as $value) {
+            $push = trim(preg_replace('/[\n\r\t\s]+/u', ' ', $value));
+            $hash[] = $push;
+        }
+
+        $hash_string = implode($separator, $hash);
+
+        // sha256
+        $alpha_num = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $hash_string));
+        $prefix    = str_pad(substr($alpha_num, 0, 3), 3, "_", STR_PAD_LEFT);
+        $suffix    = str_pad(substr($alpha_num, -3), 3, "_", STR_PAD_RIGHT);
+
+        $hash_string = $prefix . '.' . hash('sha256', $hash_string) . '.' . $suffix;
+
+        return $hash_string;
     }
 }
