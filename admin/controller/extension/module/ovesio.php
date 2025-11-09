@@ -52,12 +52,12 @@ class ControllerExtensionModuleOvesio extends Controller
 
         $client = $this->buildClient();
 
-        $data['errors'] = '';
+        $data['errors'] = [];
         try {
             $client->languages()->list();
         } catch (Exception $e) {
             if ($this->config->get($this->module_key . '_api_token')) {
-                $data['errors'] = $e->getMessage();
+                $data['errors'][] = $e->getMessage();
             }
         }
 
