@@ -29,6 +29,9 @@ $_['text_warning_no_language'] = 'Attention, no language has been selected for t
 $_['text_content_generator'] = 'AI Content Generator';
 $_['text_seo_generator']     = 'AI SEO MetaTags Generator';
 $_['text_translate']         = 'Translate Settings';
+$_['text_store_info']        = 'Store';
+$_['text_store_connected']   = 'Your store is connected to Ovesio';
+$_['text_status_active']     = 'Enabled';
 
 $_['activity_generate_content']  = 'Generate Content';
 $_['activity_generate_seo']      = 'Generate MetaTags';
@@ -40,6 +43,7 @@ $_['entry_status']     = 'Status';
 // Additional text keys
 $_['text_connect'] = 'Connect';
 $_['text_activity_list'] = 'Lista de activități';
+$_['text_message'] = 'Message';
 $_['text_api_token'] = 'API Token';
 $_['text_api_token_helper'] = 'The API token can be found in your Ovesio account, in the Settings section.';
 $_['text_default_language'] = 'Default Language';

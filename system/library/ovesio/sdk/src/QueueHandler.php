@@ -22,6 +22,7 @@ class QueueHandler
     private $options;
     private $log;
     private $debug = [];
+    private $to_langs = [];
 
     /**
      * The list of activities that will be processed in order of priority
@@ -44,6 +45,18 @@ class QueueHandler
         $this->api = $api;
         $this->options = $options;
         $this->log = $log;
+
+        $languages = $this->getOption('language_settings', []);
+        $from_lang = $this->getOption('default_language');
+
+        $to_langs = [];
+        foreach ($languages as $language) {
+            if (empty($language['translate']) || $language['code'] === $from_lang || empty($language['translate_from'])) continue;
+
+            $to_langs[] = $language['code'];
+        }
+
+        $this->to_langs = $to_langs;
     }
 
     /**
@@ -186,30 +199,53 @@ class QueueHandler
 
     protected function ignoreMoveOnNextEvent($resource_type, $resource_ids, $activity_type, $message = '', $status = 'completed', $request = null)
     {
-        if ($activity_type == 'translate') {
-            return;
-        }
+        $resource_ids = (array) $resource_ids;
 
-        $default_language = $this->getOption('default_language');
-        $resource_ids     = (array) $resource_ids;
+        if ($activity_type == 'translate') { // scalar
+            foreach ($this->to_langs as $lang) {
 
-        foreach ($resource_ids as $resource_id) {
-            $list_item = [
-                'resource_type' => $resource_type,
-                'resource_id'   => $resource_id,
-                'lang'          => $default_language,
-                'activity_type' => $activity_type,
-                'message'       => $message,
-                'request'       => $request ? json_encode($request) : null,
-                'stale'         => 0,
-                'updated_at'    => date('Y-m-d H:i:s')
-            ];
+                foreach ($resource_ids as $resource_id) {
+                    $list_item = [
+                        'resource_type' => $resource_type,
+                        'resource_id'   => $resource_id,
+                        'lang'          => $lang,
+                        'activity_type' => $activity_type,
+                        'message'       => $message,
+                        'request'       => $request ? json_encode($request) : null,
+                        'stale'         => 0,
+                        'updated_at'    => date('Y-m-d H:i:s')
+                    ];
 
-            if ($status) {
-                $list_item['status'] = $status;
+                    if ($status) {
+                        $list_item['status'] = $status;
+                    }
+
+                    $this->model->addList($list_item);
+                }
             }
 
-            $this->model->addList($list_item);
+        } else {
+
+            $default_language = $this->getOption('default_language');
+
+            foreach ($resource_ids as $resource_id) {
+                $list_item = [
+                    'resource_type' => $resource_type,
+                    'resource_id'   => $resource_id,
+                    'lang'          => $default_language,
+                    'activity_type' => $activity_type,
+                    'message'       => $message,
+                    'request'       => $request ? json_encode($request) : null,
+                    'stale'         => 0,
+                    'updated_at'    => date('Y-m-d H:i:s')
+                ];
+
+                if ($status) {
+                    $list_item['status'] = $status;
+                }
+
+                $this->model->addList($list_item);
+            }
         }
     }
 
@@ -366,13 +402,13 @@ class QueueHandler
                 $push['content']['additional'][] = $attributes[$attribute_id] . ': ' . $attribute_text;
             }
 
+            $push['content'] = $this->decode($push['content']);
+
             foreach ($push['content'] as $k => $v) {
                 if (is_array($v)) {
                     sort($push['content'][$k]);
                 }
             }
-
-            $push['content'] = $this->decode($push['content']);
 
             // remove description from hash to avoid recreating it everytime
             $_push = $push;
@@ -402,6 +438,8 @@ class QueueHandler
                 $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "Minimum description length not met", 'skipped');
                 continue;
             }
+
+            $this->debug('product', $product['product_id'], 'generate_content', 'new');
 
             $this->discardNextEvents('generate_description', $push['ref']);
 
@@ -463,6 +501,8 @@ class QueueHandler
                 $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "Minimum description length not met", 'skipped');
                 continue;
             }
+
+            $this->debug('category', $category['category_id'], 'generate_content', 'new');
 
             $this->discardNextEvents('generate_description', $push['ref']);
 
@@ -579,7 +619,7 @@ class QueueHandler
     protected function pushGenerateProductSeoRequests($request, $activities, $include_disabled = false, $include_stock_0 = true)
     {
         $product_ids = array_keys($activities);
-
+        $this->debug('product', $product_ids, 'generate_seo', 'not_found'); // we make presence known on each iteration
         $only_for_action = $this->getOption('generate_seo_only_for_action');
 
         if ($only_for_action) {
@@ -643,6 +683,8 @@ class QueueHandler
                 continue;
             }
 
+            $this->debug('product', $product['product_id'], 'generate_seo', 'new');
+
             $this->discardNextEvents('generate_seo', $push['ref']);
 
             $request->data($push['content'], $push['ref']);
@@ -657,7 +699,7 @@ class QueueHandler
     protected function pushGenerateCategorySeoRequests($request, $activities, $include_disabled = false)
     {
         $category_ids = array_keys($activities);
-
+        $this->debug('category', $category_ids, 'generate_seo', 'not_found'); // we make presence known on each iteration
         $only_for_action = $this->getOption('generate_seo_only_for_action');
 
         if ($only_for_action) {
@@ -696,6 +738,8 @@ class QueueHandler
                 continue;
             }
 
+            $this->debug('category', $category['category_id'], 'generate_seo', 'new');
+
             $this->discardNextEvents('generate_seo', $push['ref']);
 
             $request->data($push['content'], $push['ref']);
@@ -710,6 +754,10 @@ class QueueHandler
 
     protected function handleTranslateQueue()
     {
+        if (empty($this->to_langs)) {
+            return;
+        }
+
         $default_language           = $this->getOption('default_language');
         $translate_status           = (bool) $this->getOption('translate_status');
         $translate_include_disabled = array_filter((array) $this->getOption('translate_include_disabled', []));
@@ -763,16 +811,12 @@ class QueueHandler
 
         $languages = $this->getOption('language_settings', []);
 
-        $to_langs = [];
+        $to_langs = $this->to_langs;
         $conditions = [];
 
         foreach ($languages as $language) {
-            if (empty($language['translate']) || $language['code'] === $from_lang || empty($language['translate_from'])) continue;
-
-            $to_langs[] = $language['code'];
-
             // apply conditions in case the from language is not the default language
-            if ($from_lang != $language['translate_from']) {
+            if ($from_lang != $language['translate_from'] && in_array($language['code'], $to_langs)) {
                 $conditions[$language['code']] = $language['translate_from'];
             }
         }
@@ -858,6 +902,7 @@ class QueueHandler
     protected function pushTranslateCategoryRequests($request, $activities, $include_disabled = false)
     {
         $category_ids = array_keys($activities);
+        $this->debug('category', $category_ids, 'translate', 'not_found'); // we make presence known on each iteration
 
         $translate_fields = (array) $this->getOption('translate_fields', []);
         $translate_for = array_filter($translate_fields, function ($item) {
@@ -865,10 +910,9 @@ class QueueHandler
         });
 
         if (empty($translate_for['categories'])) {
+            $this->debug('category', $category_ids, 'translate', 'skipped', 'disabled');
             return;
         }
-
-        $category_ids = array_keys($activities);
 
         $translate_fields = $translate_fields['categories'];
 
@@ -878,7 +922,7 @@ class QueueHandler
             $this->ignoreMoveOnNextEvent('category', $category_ids, 'translate', "Not found or disabled", 'skipped');
             return;
         }
-// TODO: hash changed check ?
+
         foreach ($categories as $i => $category) {
             $push = [
                 'ref'     => 'category/' . $category['category_id'],
@@ -894,13 +938,26 @@ class QueueHandler
                 ];
             }
 
-            if (!empty($push['content'])) {
-                $this->debug('category', $category['category_id'], 'translate', 'translate');
-
-                $this->discardNextEvents('translate', $push['ref']);
-
-                $request->data($push['content'], $push['ref']);
+            if (empty($push['content'])) {
+                $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'translate', "Empty content to translate", 'skipped');
+                $this->debug('category', $category['category_id'], 'translate', 'skipped', 'empty_content');
+                continue;
             }
+
+            $push['content'] = $this->decode($push['content']);
+
+            $hash = $this->contentHash($push['content']);
+            $this->activity_hash['translate'][$push['ref']] = $hash;
+
+            if (!$this->activityIsStaled($activities, 'category', $category['category_id'], $hash, 'translate')) {
+                continue;
+            }
+
+            $this->debug('category', $category['category_id'], 'translate', 'translate');
+
+            $this->discardNextEvents('translate', $push['ref']);
+
+            $request->data($push['content'], $push['ref']);
         }
 
         if (!$request->getData()) {
@@ -911,6 +968,7 @@ class QueueHandler
     protected function pushTranslateProductRequests($request, $activities, $include_disabled = false, $include_stock_0 = true)
     {
         $product_ids = array_keys($activities);
+        $this->debug('product', $product_ids, 'translate', 'not_found'); // we make presence known on each iteration
 
         $translate_fields = (array) $this->getOption('translate_fields', []);
         $translate_for = array_filter($translate_fields, function ($item) {
@@ -918,10 +976,12 @@ class QueueHandler
         });
 
         if (empty($translate_for['products'])) {
+            $this->debug('product', $product_ids, 'translate', 'skipped', 'disabled');
             return;
         }
 
-        $translate_fields = $translate_fields['products'];
+        $attribute_translate_fields = $translate_fields['attributes'] ?? [];
+        $translate_fields           = $translate_fields['products'];
 
         $products = $this->model->getProducts($product_ids, $include_disabled, $include_stock_0);
 
@@ -961,15 +1021,19 @@ class QueueHandler
                 ];
             }
 
-            foreach (($product_attributes[$product['product_id']] ?? []) as $attribute_id => $attribute_text) {
-                $push['content'][] = [
-                    'key'     => 'a-' . $attribute_id,
-                    'value'   => $attribute_text,
-                    'context' => $attributes[$attribute_id]
-                ];
+            if (!empty($attribute_translate_fields['value'])) {
+                foreach (($product_attributes[$product['product_id']] ?? []) as $attribute_id => $attribute_text) {
+                    $push['content'][] = [
+                        'key'     => 'a-' . $attribute_id,
+                        'value'   => $attribute_text,
+                        'context' => $attributes[$attribute_id]
+                    ];
+                }
             }
 
             if (empty($push['content'])) {
+                $this->debug('product', $product['product_id'], 'translate', 'skipped', 'empty_content');
+                $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'translate', "Empty content to translate", 'skipped');
                 continue;
             }
 
@@ -997,6 +1061,7 @@ class QueueHandler
     protected function pushTranslateAttributeGroupRequests($request, $activities, $include_disabled = false)
     {
         $attribute_group_ids = array_keys($activities);
+        $this->debug('attribute_group', $attribute_group_ids, 'translate', 'not_found'); // we make presence known on each iteration
 
         $translate_fields = (array)$this->getOption('translate_fields', []);
 
@@ -1004,7 +1069,10 @@ class QueueHandler
             return array_filter($item);
         });
 
-        if (empty($translate_for['attributes'])) {
+        $translate_fields = $translate_fields['attributes'];
+
+        if (empty($translate_for['attributes']) || empty($translate_fields['name'])) {
+            $this->debug('attribute_group', $attribute_group_ids, 'translate', 'skipped', 'disabled');
             $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "Groups and Attributes translation is disabled", 'skipped');
             return;
         }
@@ -1076,7 +1144,12 @@ class QueueHandler
             return array_filter($item);
         });
 
-        if (empty($translate_for['attributes'])) {
+        $translate_fields = $translate_fields['attributes'];
+
+        if (empty($translate_for['attributes']) || empty($translate_fields['name'])) {
+            $attributes          = $this->model->getAttributes($attribute_ids);
+            $attribute_group_ids = array_column($attributes, 'attribute_group_id');
+            $this->debug('attribute_group', $attribute_group_ids, 'translate', 'skipped', 'disabled');
             $this->ignoreMoveOnNextEvent('attribute', $attribute_ids, 'translate', "Groups and Attributes translation is disabled", 'skipped');
             return;
         }
@@ -1092,6 +1165,8 @@ class QueueHandler
         $attributes          = $this->model->getAttributes($attribute_ids);
         $attribute_group_ids = array_column($attributes, 'attribute_group_id');
         $attributes          = $this->model->getGroupsAttributes($attribute_group_ids);
+
+        $this->debug('attribute_group', $attribute_group_ids, 'translate', 'not_found'); // we make presence known on each iteration
 
         $groups = [];
         foreach ($attribute_group_ids as $attribute_group_id) {
@@ -1128,9 +1203,9 @@ class QueueHandler
                 continue;
             }
 
-            $this->discardNextEvents('translate', $push['ref']);
+            $this->debug('attribute_group', $attribute['attribute_group_id'], 'translate', 'translate');
 
-            $this->debug('attribute', $attribute['attribute_group_id'], 'translate', 'translate');
+            $this->discardNextEvents('translate', $push['ref']);
 
             $request->data($push['content'], $push['ref']);
         }
@@ -1143,14 +1218,16 @@ class QueueHandler
     public function pushTranslateOptionRequests($request, $activities, $include_disabled = false)
     {
         $option_ids = array_keys($activities);
-
         $translate_fields = (array)$this->getOption('translate_fields', []);
 
         $translate_for = array_filter($translate_fields, function ($item) {
             return array_filter($item);
         });
 
-        if (empty($translate_for['options'])) {
+        $translate_fields = $translate_fields['options'];
+
+        if (empty($translate_for['options']) || empty($translate_fields['name'])) {
+            $this->debug('option', $option_ids, 'translate', 'skipped', 'disabled');
             $this->ignoreMoveOnNextEvent('option', $option_ids, 'translate', "Options translation is disabled", 'skipped');
             return;
         }
@@ -1191,6 +1268,8 @@ class QueueHandler
             }
 
             if (empty($push['content'])) {
+                $this->ignoreMoveOnNextEvent('option', $option['option_id'], 'translate', "Empty content to translate", 'skipped');
+                $this->debug('option', $option['option_id'], 'translate', 'skipped', 'empty_content');
                 continue;
             }
 
@@ -1203,9 +1282,9 @@ class QueueHandler
                 continue;
             }
 
-            $this->discardNextEvents('translate', $push['ref']);
-
             $this->debug('option', $option['option_id'], 'translate', 'translate');
+
+            $this->discardNextEvents('translate', $push['ref']);
 
             $request->data($push['content'], $push['ref']);
         }

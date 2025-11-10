@@ -31,37 +31,57 @@
           <?php endif; ?>
 
           <!-- Flexbox container with horizontal scroll -->
-          <div class="ov-cards-container <?php echo $connected ? '' : 'ov-hidden'; ?>" id="workflow_cards">
+          <div class="ov-table-responsive">
+            <div class="ov-cards-container <?php echo $connected ? '' : 'ov-hidden'; ?>" id="workflow_cards">
 
-            <!-- Card 1 -->
-            <?php echo $generate_content_card; ?>
+              <!-- Store Info Card -->
+              <div class="ov-card ov-workflow-card">
+                <div class="ov-card-body">
+                  <h4 class="ov-card-title ov-text-xl"><?php echo $text_store_info; ?></h4>
+                  <div style="text-align: center; padding: 1rem 0;">
+                    <div style="width: 80px; height: 80px; margin: 0 auto 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 9L12 2L21 9V20C21 20.5304 20.7893 21.0391 20.4142 21.4142C20.0391 21.7893 19.5304 22 19 22H5C4.46957 22 3.96086 21.7893 3.58579 21.4142C3.21071 21.0391 3 20.5304 3 20V9Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M9 22V12H15V22" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <p class="ov-text-muted ov-mb-2" style="font-size: 0.875rem;"><?php echo $text_store_connected; ?></p>
+                    <div class="ov-badge ov-badge-success"><?php echo $text_status_active; ?></div>
+                  </div>
+                </div>
+              </div>
 
-            <!-- Flow Arrow 1 -->
-            <div class="ov-flow-arrow">
-              <svg width="30" height="24" viewBox="0 0 30 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M2 12H28M28 12L22 6M28 12L22 18" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <!-- Flow Arrow 0 -->
+              <div class="ov-flow-arrow">
+                <svg width="30" height="24" viewBox="0 0 30 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 12H28M28 12L22 6M28 12L22 18" stroke="#667eea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+
+              <!-- Card 1 -->
+              <?php echo $generate_content_card; ?>
+
+              <!-- Flow Arrow 1 -->
+              <div class="ov-flow-arrow">
+                <svg width="30" height="24" viewBox="0 0 30 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 12H28M28 12L22 6M28 12L22 18" stroke="#6c757d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+
+              <!-- Card 2 -->
+              <?php echo $generate_seo_card; ?>
+
+              <!-- Flow Arrow 2 -->
+              <div class="ov-flow-arrow">
+                <svg width="30" height="24" viewBox="0 0 30 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 12H28M28 12L22 6M28 12L22 18" stroke="#0d6efd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+
+              <!-- Card 3 -->
+              <?php echo $translate_card; ?>
+
             </div>
-
-            <!-- Card 2 -->
-            <?php echo $generate_seo_card; ?>
-
-            <!-- Flow Arrow 2 -->
-            <div class="ov-flow-arrow">
-              <svg width="30" height="24" viewBox="0 0 30 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M2 12H28M28 12L22 6M28 12L22 18" stroke="#0d6efd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </div>
-
-            <!-- Card 3 -->
-            <?php echo $translate_card; ?>
-
-          </div>
-
-          <div class="ov-callback-info">
-            <?php echo $text_translation_callback; ?>:
-            <a href="<?php echo $url_callback; ?>" target="_blank" class="ov-text-sm"><?php echo $url_callback; ?></a>
-            <small class="ov-text-sm ov-text-info"><?php echo $text_translation_callback_helper; ?></small>
           </div>
 
           <!-- CRON Information Well -->
@@ -86,6 +106,12 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <div class="ov-callback-info">
+            <?php echo $text_translation_callback; ?>:
+            <a href="<?php echo $url_callback; ?>" target="_blank" class="ov-text-sm"><?php echo $url_callback; ?></a>
+            <small class="ov-text-sm ov-text-info"><?php echo $text_translation_callback_helper; ?></small>
           </div>
         </div>
       </div>

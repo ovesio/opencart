@@ -437,7 +437,7 @@ class ModelExtensionModuleOvesio extends Model
         $union = [];
 
         if ($translate_status) {
-            if (!$resource_type || $resource_type == 'attribute_group') {
+            if (in_array('attributes', $resources) && (!$resource_type || $resource_type == 'attribute_group')) {
                 $attributes_sql = "SELECT 'attribute_group' as resource, a.attribute_group_id AS resource_id
                     FROM " . DB_PREFIX . "attribute_description as ad
                     JOIN " . DB_PREFIX . "attribute as a ON a.attribute_id = ad.attribute_id
@@ -450,7 +450,7 @@ class ModelExtensionModuleOvesio extends Model
                 $union[] = $attributes_sql;
             }
 
-            if (!$resource_type || $resource_type == 'option') {
+            if (in_array('options', $resources) && (!$resource_type || $resource_type == 'option')) {
                 $options_sql = "SELECT 'option' as resource, o.option_id as resource_id
                     FROM " . DB_PREFIX . "option_description as od
                     JOIN " . DB_PREFIX . "option as o ON o.option_id = od.option_id
