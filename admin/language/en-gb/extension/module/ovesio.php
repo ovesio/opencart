@@ -30,8 +30,8 @@ $_['text_content_generator'] = 'AI Content Generator';
 $_['text_seo_generator']     = 'AI SEO MetaTags Generator';
 $_['text_translate']         = 'Translate Settings';
 
-$_['activity_content_generator'] = 'Generate Content';
-$_['activity_seo_generator']     = 'MetaTags';
+$_['activity_generate_content']  = 'Generate Content';
+$_['activity_generate_seo']      = 'Generate MetaTags';
 $_['activity_translate']         = 'Translate';
 
 // Entry
