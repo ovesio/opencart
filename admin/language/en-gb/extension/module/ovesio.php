@@ -48,6 +48,7 @@ $_['text_message'] = 'Message';
 $_['text_api_url'] = 'API URL';
 $_['text_translated_fields'] = 'Translated Fields';
 $_['text_translate_for'] = 'Translate the following';
+$_['text_api_token'] = 'API Token';
 $_['text_api_token_helper'] = 'The API token can be found in your <a href="https://ovesio.com/account/login" class="ov-bold ov-text-primary" target="_blank">Ovesio account</a>, in the Settings section.';
 $_['text_default_language'] = 'Default Language';
 $_['text_disconnect_confirm'] = 'This will disable the module. Are you sure?';
