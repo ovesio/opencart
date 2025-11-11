@@ -32,6 +32,15 @@ class ControllerExtensionModuleOvesioEvent extends Controller
 
         $this->load->model('extension/module/ovesio');
 
+        if ($resource == 'attribute') {
+            $this->load->model('catalog/attribute');
+
+            $attribute_group_id = $this->model_extension_module_ovesio->getAttributeGroupId($resource_id);
+
+            $resource    = 'attribute_group';
+            $resource_id = $attribute_group_id;
+        }
+
         $this->model_extension_module_ovesio->setStale($resource, $resource_id, 1);
     }
 }

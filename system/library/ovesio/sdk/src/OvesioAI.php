@@ -24,10 +24,6 @@ class OvesioAI
 
     public function __construct(string $apiKey, string $baseUrl = 'https://api.ovesio.com/v1/')
     {
-        if (defined('OVESIO_API_URL')) {
-            $baseUrl = OVESIO_API_URL;
-        }
-
         $this->httpClient = new HttpClient($apiKey, $baseUrl);
     }
 

@@ -144,4 +144,11 @@ class ModelExtensionModuleOvesio extends Model
 
         return $sql;
     }
+
+    public function getAttributeGroupId($attribute_id)
+    {
+        $query = $this->db->query("SELECT attribute_group_id FROM `" . DB_PREFIX . "attribute` WHERE attribute_id = '" . (int)$attribute_id . "' LIMIT 1");
+
+        return $query->row ? $query->row['attribute_group_id'] : null;
+    }
 }

@@ -178,9 +178,9 @@
                   <tr>
                     <th width="100px"><?php echo $text_resource_type; ?></th>
                     <th><?php echo $text_resource_id; ?></th>
-                    <th width="100px"><?php echo $text_activity_type; ?></th>
-                    <th width="5%"><?php echo $text_language; ?></th>
-                    <th width="5%" class="ov-status-column"><?php echo $text_status; ?></th>
+                    <th width="100px" class="ov-text-center"><?php echo $text_activity_type; ?></th>
+                    <th width="5%" class="ov-text-center"><?php echo $text_language; ?></th>
+                    <th width="5%" style="min-width:120px" class="ov-text-center"><?php echo $text_status; ?></th>
                     <th width="20%"><?php echo $text_message; ?></th>
                     <th width="100px"><?php echo $text_last_updated; ?></th>
                   </tr>
@@ -197,10 +197,10 @@
                             #<?php echo $activity['resource_id']; ?> - <small class="ov-text-muted"><?php echo $activity['resource_name_escaped']; ?></small>
                           </a>
                         </td>
-                        <td>
+                        <td class="ov-text-center">
                           <span class="ov-badge <?php echo $activity['activity_display']['class']; ?>"><?php echo $activity['activity_display']['text']; ?></span>
                         </td>
-                        <td>
+                        <td class="ov-text-center">
                           <div class="ov-d-flex ov-align-center">
                             <?php if ($activity['language_flag']) { ?>
                               <img src="<?php echo $activity['language_flag']; ?>" alt="<?php echo $activity['language_name']; ?>" title="<?php echo $activity['language_name']; ?>" style="width: 16px; margin-right: 0.4rem" />
@@ -210,7 +210,7 @@
                             </span>
                           </div>
                         </td>
-                        <td class="ov-status-column">
+                        <td class="ov-text-center">
                           <span class="ov-status-badge <?php echo $activity['status_display']['class']; ?>"><?php echo $activity['status_display']['text']; ?></span>
                           <div class="ov-status-actions">
                             <button type="button" class="ov-mini-btn ov-tooltip" data-tooltip="<?php echo $text_tooltip_view_request; ?>" onclick="ovesio.modalButton(event)" data-title="<?php echo $text_request; ?>" data-url="<?php echo $url_view_request . '&activity_id=' . $activity['id']; ?>">

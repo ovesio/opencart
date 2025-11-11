@@ -9,7 +9,6 @@
       <?php endif; ?>
     </div>
 
-    <?php if ($generate_content_status): ?>
     <ul class="ov-bullet-list">
       <li class="ov-bullet-item">
         <span class="ov-bullet ov-bullet-red" style="align-self: start; margin-top: 8px;"></span>
@@ -47,18 +46,19 @@
       </li>
       <?php endif; ?>
 
+      <?php if ($generate_content_workflow): ?>
       <li class="ov-bullet-item">
         <span class="ov-bullet ov-bullet-orange"></span>
         <b>Workflow:</b>&nbsp;<?php echo $generate_content_workflow['name']; ?>
       </li>
+      <?php endif; ?>
     </ul>
-    <?php endif; ?>
 
     <div class="ov-card-bottom">
       <div class="ov-feedback-container"></div>
 
       <div class="ov-edit-button">
-        <a href="javascript:;" class="ov-btn ov-btn-outline-primary ov-btn-sm" onclick="ovesio.modalButton(event)" data-title="AI Content Generator Settings" data-url="<?php echo $url_edit; ?>">Edit</a>
+        <a href="javascript:;" class="ov-btn ov-btn-outline-primary" onclick="ovesio.modalButton(event)" data-title="AI Content Generator Settings" data-url="<?php echo $url_edit; ?>">Edit</a>
       </div>
     </div>
 

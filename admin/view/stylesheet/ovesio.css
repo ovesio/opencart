@@ -104,6 +104,10 @@ button * {
   pointer-events: none;
 }
 
+.ov u, .ov-modal u {
+  text-decoration: underline !important;
+}
+
 /* Card Component */
 .ov-card {
   position: relative;
@@ -122,6 +126,23 @@ button * {
 .ov-card-body {
   flex: 1 1 auto;
   padding: 1rem;
+}
+
+fieldset.ov-fieldset:not(:last-child) {
+  border-bottom: 1px solid #e7e7e7;
+  margin-bottom: 1rem !important;
+}
+
+fieldset.ov-fieldset > legend {
+  font-weight: 600 !important;
+  font-size: 1.5rem !important;
+  color: #797979 !important;
+}
+
+.ov-workflow-card.ov-card-home {
+  border: 1px solid transparent;
+  box-shadow: none;
+  text-align: center;
 }
 
 #workflow_cards .ov-card-body::after {
@@ -479,6 +500,7 @@ select.ov-form-control-lg {
   box-sizing: border-box;
   margin: 0;
   font-family: inherit;
+  font-size: 1.25rem;
 }
 
 .ov-btn:hover {
@@ -633,7 +655,7 @@ select.ov-form-control-lg {
 
 .ov-btn-sm {
   padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
+  font-size: 1rem;
   border-radius: 0.25rem;
 }
 
@@ -838,7 +860,7 @@ select.ov-form-control-lg {
 .ov-badge {
   display: inline-block;
   padding: 0.35em 0.65em;
-  font-size: 0.75em;
+  font-size: 1.25rem;
   font-weight: 700;
   line-height: 1;
   color: #fff;
@@ -1259,7 +1281,8 @@ select.ov-form-control-lg {
 }
 
 .ov-text-info {
-  color: #0dcaf0 !important;
+  color: #3851a3 !important;
+  font-weight: bold;
 }
 
 .ov-text-light {
@@ -1280,6 +1303,10 @@ select.ov-form-control-lg {
 
 .ov-text-black {
   color: #000000 !important;
+}
+
+.ov-bold {
+  font-weight: 700 !important;
 }
 
 /* ================================
@@ -2035,7 +2062,7 @@ select.ov-form-control-lg {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: 1.25rem;
   font-weight: 500;
   border-radius: 0.25rem;
   text-transform: uppercase;
@@ -2071,12 +2098,6 @@ select.ov-form-control-lg {
   color: #41464b;
   background-color: #e2e3e5;
   border: 1px solid #d3d6db;
-}
-
-/* Status column */
-.ov-status-column {
-  text-align: center;
-  min-width: 120px;
 }
 
 .ov-status-actions {
@@ -2135,7 +2156,7 @@ select.ov-form-control-lg {
   color: #fff;
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
-  font-size: 0.75rem;
+  font-size: 1.25rem;
   white-space: nowrap;
   opacity: 0;
   visibility: hidden;

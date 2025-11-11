@@ -9,7 +9,6 @@
       <?php endif; ?>
     </div>
 
-    <?php if ($translate_status): ?>
     <ul class="ov-bullet-list">
       <li class="ov-bullet-item">
         <span class="ov-bullet ov-bullet-red" style="align-self: start; margin-top: 8px;"></span>
@@ -47,10 +46,12 @@
       </li>
       <?php endif; ?>
 
+      <?php if ($translate_workflow): ?>
       <li class="ov-bullet-item">
         <span class="ov-bullet ov-bullet-orange"></span>
         <b>Workflow:</b>&nbsp;<?php echo $translate_workflow['name']; ?>
       </li>
+      <?php endif; ?>
 
       <li class="ov-bullet-item">
         <span class="ov-bullet ov-bullet-cyan" style="align-self: start; margin-top: 8px;"></span>
@@ -71,13 +72,12 @@
         </div>
       </li>
     </ul>
-    <?php endif; ?>
 
     <div class="ov-card-bottom">
       <div class="ov-feedback-container"></div>
 
       <div class="ov-edit-button">
-        <a href="javascript:;" class="ov-btn ov-btn-outline-primary ov-btn-sm" onclick="ovesio.modalButton(event)" data-title="Translate Settings" data-url="<?php echo $url_edit; ?>">Edit</a>
+        <a href="javascript:;" class="ov-btn ov-btn-outline-primary" onclick="ovesio.modalButton(event)" data-title="Translate Settings" data-url="<?php echo $url_edit; ?>">Edit</a>
       </div>
 
     </div>

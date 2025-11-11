@@ -7,7 +7,7 @@
         <div class="ov-reset">
           <!-- Top Bar -->
           <div class="ov-top-bar">
-            <div></div>
+            <div><img src="/image/logo-ovesio-sm.png" style="height:25px; width: auto" alt="Ovesio Logo"></div>
             <div>
               <a href="<?php echo $url_list; ?>" type="button" class="ov-btn ov-btn-secondary">
                 <?php echo $text_activity_list; ?>
@@ -35,7 +35,7 @@
             <div class="ov-cards-container <?php echo $connected ? '' : 'ov-hidden'; ?>" id="workflow_cards">
 
               <!-- Store Info Card -->
-              <div class="ov-card ov-workflow-card">
+              <div class="ov-card ov-workflow-card ov-card-home">
                 <div class="ov-card-body">
                   <h4 class="ov-card-title ov-text-xl"><?php echo $text_store_info; ?></h4>
                   <div style="text-align: center; padding: 1rem 0;">
@@ -45,7 +45,7 @@
                         <path d="M9 22V12H15V22" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>
                     </div>
-                    <p class="ov-text-muted ov-mb-2" style="font-size: 0.875rem;"><?php echo $text_store_connected; ?></p>
+                    <p class="ov-text-muted ov-mb-2" style="font-size: 1.25rem;"><?php echo $text_store_connected; ?></p>
                     <div class="ov-badge ov-badge-success"><?php echo $text_status_active; ?></div>
                   </div>
                 </div>
@@ -85,7 +85,7 @@
           </div>
 
           <!-- CRON Information Well -->
-          <div class="<?php echo $connected ? '' : 'ov-hidden'; ?>" id="general_cron_info">
+          <div class="ov-mb-3 <?php echo $connected ? '' : 'ov-hidden'; ?>" id="general_cron_info">
             <h4><?php echo $text_cron_info; ?></h4>
             <div class="ov-cron-section">
               <div class="ov-form-group">

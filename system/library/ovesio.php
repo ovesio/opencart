@@ -60,6 +60,7 @@ class Ovesio extends Model
         $data = $this->model_setting_setting->getSetting($this->module_key);
 
         foreach ($data as $key => $value) {
+            $value = $this->config->get($key); // ensure we get the latest config value
             $key = str_replace($this->module_key . '_', '', $key);
             $options[$key] = $value;
         }
@@ -68,7 +69,10 @@ class Ovesio extends Model
         $options['server_url'] = defined('HTTPS_CATALOG') ? HTTPS_CATALOG : (defined('HTTPS_SERVER') ? HTTPS_SERVER : '');
         $options['default_language_id'] = $this->default_language_id;
 
-        $api = new OvesioAI((string) $this->config->get($this->module_key . '_api_token'));
+        $api_url   = $this->config->get($this->module_key . '_api_url');
+        $api_token = $this->config->get($this->module_key . '_api_token');
+
+        $api = new OvesioAI($api_token, $api_url);
 
         $model = new ModelExtensionModuleOvesio($this->registry);
 

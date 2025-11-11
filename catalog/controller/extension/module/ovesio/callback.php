@@ -435,24 +435,38 @@ class ControllerExtensionModuleOvesioCallback extends Controller
 
         $payload = null;
 
-        $api = new OvesioAI($this->config->get($this->module_key . '_api_token'));
+        $api_url   = $this->config->get($this->module_key . '_api_url');
+        $api_token = $this->config->get($this->module_key . '_api_token');
 
-        if ($activity['activity_type'] == 'generate_content') {
-            $response = $api->generateDescription()->status($activity['activity_id']);
-            $payload = isset($response->data) ? $response->data : null;
-        } elseif ($activity['activity_type'] == 'generate_seo') {
-            $response = $api->generateSeo()->status($activity['activity_id']);
-            $payload = isset($response->data) ? $response->data : null;
-        } elseif ($activity['activity_type'] == 'translate') {
-            $response = $api->translate()->status($activity['activity_id']);
+        $api = new OvesioAI($api_token, $api_url);
 
-            foreach ($response->data->data as $item) {
-                if ($item->to == $activity['lang']) {
-                    $payload = $item;
-                    $payload->ref = $response->data->ref;
-                    break;
+        try {
+            if ($activity['activity_type'] == 'generate_content') {
+                $response = $api->generateDescription()->status($activity['activity_id']);
+                $payload = isset($response->data) ? $response->data : null;
+            } elseif ($activity['activity_type'] == 'generate_seo') {
+                $response = $api->generateSeo()->status($activity['activity_id']);
+                $payload = isset($response->data) ? $response->data : null;
+            } elseif ($activity['activity_type'] == 'translate') {
+                $response = $api->translate()->status($activity['activity_id']);
+
+                if ($response->success) {
+                    foreach ($response->data->data as $item) {
+                        if ($item->to == $activity['lang']) {
+                            $payload = $item;
+                            $payload->ref = $response->data->ref;
+                            break;
+                        }
+                    }
                 }
             }
+        } catch (Throwable $e) {}
+
+        if (empty($payload)) {
+            return $this->response->setOutput(json_encode([
+                'success' => false,
+                'error'   => $this->language->get('error_fetching_status')
+            ]));
         }
 
         $payload = json_decode(json_encode($payload), true);

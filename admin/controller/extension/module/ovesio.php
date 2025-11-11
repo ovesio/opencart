@@ -113,30 +113,76 @@ class ControllerExtensionModuleOvesio extends Controller
 
         $hash = md5(uniqid(rand(), true));
 
+        $config_language = $this->config->get('config_language');
+
         $defaults = [];
         $defaults['status']           = 0;
         $defaults['hash']             = $hash;
+        $defaults['api_url']          = 'https://api.ovesio.com/v1/';
         $defaults['api_token']        = '';
-        $defaults['default_language'] = '';
+        $defaults['default_language'] = substr($config_language, 0, 2);
 
         $defaults['generate_content_status']          = '';
-        $defaults['generate_content_include_stock_0'] = '';
+        $defaults['generate_content_include_stock_0'] = 1;
         $defaults['generate_content_live_update']     = '';
         $defaults['generate_content_workflow']        = '';
         $defaults['generate_content_when_description_length'] = [
-            'products'   => 250,
-            'categories' => 100
+            'products'   => 500,
+            'categories' => 300,
+        ];
+        $defaults['generate_content_include_disabled'] = [
+            'products'   => 1,
+            'categories' => 1,
+        ];
+        $defaults['generate_content_for'] = [
+            'products'   => 1,
+            'categories' => 1,
         ];
 
         $defaults['generate_seo_status']          = '';
-        $defaults['generate_seo_only_for_action'] = '';
-        $defaults['generate_seo_include_stock_0'] = '';
+        $defaults['generate_seo_only_for_action'] = 1;
+        $defaults['generate_seo_include_stock_0'] = 1;
         $defaults['generate_seo_live_update']     = '';
         $defaults['generate_seo_workflow']        = '';
+        $defaults['generate_seo_for'] = [
+            'products'   => 1,
+            'categories' => 1,
+        ];
+        $defaults['generate_seo_include_disabled'] = [
+            'products'   => 1,
+            'categories' => 1,
+        ];
 
         $defaults['translate_status']          = '';
-        $defaults['translate_include_stock_0'] = '';
+        $defaults['translate_include_stock_0'] = 1;
         $defaults['translate_workflow']        = '';
+        $defaults['translate_for'] = [
+            'products'   => 1,
+            'categories' => 1,
+            'attributes' => 1,
+            'options'    => 1,
+        ];
+        $defaults['translate_include_disabled'] = [
+            'products'   => 1,
+            'categories' => 1,
+        ];
+        $defaults['translate_fields'] = [
+            'products'   => [
+                'name'             => 1,
+                'description'      => 1,
+                'tag'              => 1,
+                'meta_title'       => 1,
+                'meta_description' => 1,
+                'meta_keyword'     => 1,
+            ],
+            'categories' => [
+                'name'             => 1,
+                'description'      => 1,
+                'meta_title'       => 1,
+                'meta_description' => 1,
+                'meta_keyword'     => 1,
+            ],
+        ];
 
         $settings = [];
         foreach ($defaults as $key => $value) {
@@ -170,6 +216,7 @@ class ControllerExtensionModuleOvesio extends Controller
     {
         $this->load->language('extension/module/ovesio');
 
+        $api_url   = $this->request->post['api_url'];
         $api_token = $this->request->post['api_token'];
 
         $default_language = null;
@@ -182,6 +229,7 @@ class ControllerExtensionModuleOvesio extends Controller
         $settings = $this->model_setting_setting->getSetting($this->module_key);
 
         if (!$default_language) { // step 1
+            $settings[$this->module_key . '_' . 'api_url']   = $api_url;
             $settings[$this->module_key . '_' . 'api_token'] = $api_token;
         } else { // step 2
             $settings[$this->module_key . '_' . 'default_language'] = $default_language;
@@ -192,7 +240,7 @@ class ControllerExtensionModuleOvesio extends Controller
 
         $json = [];
         if (!$default_language) { // step 1
-            $client = $this->buildClient($api_token);
+            $client = $this->buildClient($api_url, $api_token);
 
             try {
                 $response = $client->languages()->list();
@@ -221,6 +269,8 @@ class ControllerExtensionModuleOvesio extends Controller
 
     public function disconnect()
     {
+        $this->load->language('extension/module/ovesio');
+
         $this->model_setting_setting->editSettingValue($this->module_key, $this->module_key . '_status', '');
 
         $json = [
@@ -460,9 +510,14 @@ class ControllerExtensionModuleOvesio extends Controller
         $data['translate_fields']           = array_filter((array)$this->config->get($this->module_key . '_translate_fields'));
         $data['language_settings']          = array_filter((array)$this->config->get($this->module_key . '_language_settings'));
 
+        $translate_for = $this->config->get($this->module_key . '_translate_for');
         $data['translate_for'] = [];
 
         foreach ($data['translate_fields'] as $resource => $fields) {
+            if (empty($translate_for[$resource])) {
+                continue;
+            }
+
             $fields = implode(', ', array_keys(array_filter($fields)));
 
             if ($fields) {
@@ -497,6 +552,16 @@ class ControllerExtensionModuleOvesio extends Controller
                 !empty($data['translate_include_disabled'][$resource]) ? $this->language->get('text_including_disabled') : $this->language->get('text_excluding_disabled'),
                 $data['translate_fields'][$resource]
             ), ':');
+        }
+
+        if (!empty($translate_for['attributes'])) {
+            $data['translate_for']['attributes']    = 1;
+            $data['translate_sumary']['attributes'] = $this->language->get('text_attributes');
+        }
+
+        if (!empty($translate_for['options'])) {
+            $data['translate_for']['options']    = 1;
+            $data['translate_sumary']['options'] = $this->language->get('text_options');
         }
 
         $html = $this->view('extension/module/ovesio_translate_card', $data);
@@ -706,14 +771,13 @@ class ControllerExtensionModuleOvesio extends Controller
         $filters['date_from']     = isset($this->request->get['date_from']) ? $this->request->get['date_from'] : '';
         $filters['date_to']       = isset($this->request->get['date_to']) ? $this->request->get['date_to'] : '';
 
-        $project = explode(':', $this->config->get($this->module_key . '_api_token'));
+        $project  = explode(':', $this->config->get($this->module_key . '_api_token'));
         $project = $project[0];
 
-        if (defined('OVESIO_APP_URL')) {
-            $base_url = rtrim(OVESIO_APP_URL, '/');
-        } else {
-            $base_url = 'https://app.ovesio.com';
-        }
+        // get domain from api url
+        $base_url   = $this->config->get($this->module_key . '_api_url');
+        $parsed_url = parse_url($base_url);
+        $base_url   = $parsed_url['scheme'] . '://' . str_replace('api.', 'app.', $parsed_url['host']);
 
         $base_url .= "/account/$project"; // 'app/translate_requests
 
@@ -866,7 +930,11 @@ class ControllerExtensionModuleOvesio extends Controller
 
         $activity = $this->model_extension_module_ovesio->getActivity($this->request->get['activity_id']);
 
-        $request = json_decode($activity['request'], true);
+        if ($activity['request']) {
+            $request = json_decode($activity['request'], true);
+        } else {
+            $request = '';
+        }
 
         $this->response->setOutput('<pre class="ov-well">' . htmlspecialchars(json_encode($request, JSON_PRETTY_PRINT)) . '</pre>');
     }
@@ -876,11 +944,17 @@ class ControllerExtensionModuleOvesio extends Controller
      */
     public function viewResponse()
     {
+        $this->load->language('extension/module/ovesio');
+
         $this->load->model('extension/module/ovesio');
 
         $activity = $this->model_extension_module_ovesio->getActivity($this->request->get['activity_id']);
 
-        $response = json_decode($activity['response'], true);
+        if ($activity['response']) {
+            $response = json_decode($activity['response'], true);
+        } else {
+            $response = '';
+        }
 
         $this->response->setOutput('<pre class="ov-well">' . htmlspecialchars(json_encode($response, JSON_PRETTY_PRINT)) . '</pre>');
     }
@@ -908,11 +982,12 @@ class ControllerExtensionModuleOvesio extends Controller
         return (array)$ovesio_languages;
     }
 
-    private function buildClient($token = null)
+    private function buildClient($api_url = null, $api_token = null)
     {
-        $token = $token ?: $this->config->get($this->module_key . '_api_token');
+        $api_url   = $api_url ?: $this->config->get($this->module_key . '_api_url');
+        $api_token = $api_token ?: $this->config->get($this->module_key . '_api_token');
 
-        return new OvesioAI($token);
+        return new OvesioAI($api_token, $api_url);
     }
 
     private function getWorkflows($type = null)

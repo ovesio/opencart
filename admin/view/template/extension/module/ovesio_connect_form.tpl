@@ -13,6 +13,14 @@
         </div>
 
         <small class="ov-text-sm ov-helper-text"><?php echo $text_api_token_helper; ?></small>
+
+        <div class="ov-form-group">
+          <label class="ov-form-label ov-required"><?php echo $text_api_url; ?>:</label>
+          <div class="ov-form-field">
+            <input name="api_url" value="<?php echo $api_url; ?>" type="text" class="ov-form-control" placeholder="Introduceți token-ul API" id="api_url">
+          </div>
+        </div>
+
         <div class="ov-form-group">
           <label class="ov-form-label ov-required"><?php echo $text_api_token; ?>:</label>
           <div class="ov-form-field">
@@ -31,7 +39,6 @@
         </div>
 
         <div class="ov-button-group">
-          <!-- <button type="button" class="ov-btn ov-btn-danger ov-btn-sm" onclick="disovesio.()">Disconnect</button> -->
           <button type="submit" class="ov-btn ov-btn-primary"><?php echo $button_connect; ?></button>
         </div>
       </form>

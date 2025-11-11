@@ -6,6 +6,7 @@ $_['heading_title']    = 'Ovesio [<a target="_blank" href="https://ovesio.com">o
 $_['text_system_language']        = 'System Language';
 $_['text_translate_from'] = 'Translate From';
 $_['text_translated_fields'] = 'Translated Fields';
+$_['text_translate_for'] = 'Translate the following';
 $_['text_products'] = 'Products';
 $_['text_categories'] = 'Categories';
 $_['text_product'] = 'Product';
@@ -44,28 +45,31 @@ $_['entry_status']     = 'Status';
 $_['text_connect'] = 'Connect';
 $_['text_activity_list'] = 'Lista de activități';
 $_['text_message'] = 'Message';
-$_['text_api_token'] = 'API Token';
-$_['text_api_token_helper'] = 'The API token can be found in your Ovesio account, in the Settings section.';
+$_['text_api_url'] = 'API URL';
+$_['text_translated_fields'] = 'Translated Fields';
+$_['text_translate_for'] = 'Translate the following';
+$_['text_api_token_helper'] = 'The API token can be found in your <a href="https://ovesio.com/account/login" class="ov-bold ov-text-primary" target="_blank">Ovesio account</a>, in the Settings section.';
 $_['text_default_language'] = 'Default Language';
 $_['text_disconnect_confirm'] = 'This will disable the module. Are you sure?';
 $_['text_default_language_helper'] = 'Default language of the online store/platform';
-$_['text_cron_info'] = 'CRON Information';
+$_['text_cron_info'] = 'CRON Information (set a cron only if you want automatic processing using above defined rules)';
 $_['text_cron_url'] = 'CRON URL';
 $_['text_cron_command'] = 'CRON Command';
 $_['text_cron_interval'] = 'Recommended Interval';
 $_['text_cron_interval_helper'] = 'For optimal data synchronization';
 $_['text_edit_configuration'] = 'Edit Configuration';
-$_['text_generate_content_for'] = 'Generate description for';
+$_['text_generate_content_for'] = 'Generate description for:';
 $_['text_generate_content_sumary'] = '%s (%s), having description less then %s characters';
 $_['text_generate_seo_sumary'] = '%s (%s)';
 $_['text_translate_sumary'] = '%s (%s): %s';
 $_['text_including_disabled'] = 'including disabled';
 $_['text_excluding_disabled'] = 'only enabled';
-$_['text_generate_content_min_length'] = 'Generate descriptions only for resources that don\'t have a description, or have a description smaller than';
+$_['text_generate_content_min_length'] = 'Only when no description, or existing description is smaller than N characters';
+$_['text_include_stock_0'] = 'Include stock 0 products';
 $_['text_characters'] = 'characters';
-$_['text_generate_content_live_update'] = 'Generate a new description when resource data has been modified';
-$_['text_generate_content_live_update_helper'] = 'If left unchecked, the description will be generated only once';
-$_['text_include_disabled_resources'] = 'Include disabled resources';
+$_['text_generate_content_live_update'] = 'Reactive generate';
+$_['text_generate_content_live_update_helper'] = 'Generate a description every time the resource details has been changed';
+$_['text_include_disabled_resources'] = 'Include disabled %s';
 $_['text_workflow_used'] = 'Workflow used';
 
 // SEO Form texts
@@ -125,6 +129,7 @@ $_['text_information'] = 'Information';
 $_['text_no_results_found'] = 'No results found';
 $_['text_all_languages'] = 'All Languages';
 $_['text_request'] = 'Request';
+$_['text_response'] = 'Response';
 $_['text_value'] = 'Value';
 
 // Connection messages
@@ -144,6 +149,7 @@ $_['text_api_error'] = 'An error occurred while retrieving the necessary informa
 
 // Validation errors
 $_['error_invalid_number'] = 'Error: A valid number greater than 0 must be entered.';
+$_['error_fetching_status'] = 'Error fetching status from API. Invalid credentials or activity ID not found.';
 
 // Status tooltips
 $_['text_tooltip_view_request'] = 'View Request';
@@ -165,3 +171,12 @@ $_['button_save_changes'] = 'Save Changes';
 $_['error_code'] = 'Language association is required';
 $_['error_from_language'] = 'You cannot translate from the same language';
 $_['error_from_language1'] = 'Selected language to translate from is disabled. This must be either activated or the catalog language';
+$_['error_no_items_selected'] = 'No item selected';
+$_['error_invalid_resource_type'] = 'Invalid resource type';
+$_['text_generate_content_with_ovesio'] = 'Ovesio - Generate Description';
+$_['text_generate_seo_with_ovesio'] = 'Ovesio - Generate MetaTags';
+$_['text_translate_with_ovesio'] = 'Ovesio - Translate';
+$_['text_resources_request_submitted'] = 'x{started} {resource_type} has been sent for {activity_type}.';
+$_['text_generate_content_item'] = 'Content Generation';
+$_['text_generate_seo_item'] = 'SEO Generation';
+$_['text_translate_item'] = 'Translation';

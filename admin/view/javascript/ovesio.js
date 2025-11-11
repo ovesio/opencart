@@ -297,6 +297,13 @@ ovesio.updateActivityStatus = function(activityId, status) {
     activity_id: activityId,
     status: status
   }).then((res) => {
+    if (!res.success) {
+      button.setAttribute('data-tooltip', res.error);
+      button.classList.add('ov-text-danger');
+      svg.classList.remove('ov-spin');
+      return;
+    }
+
     if (res.status == 'completed') {
       // document.querySelector('#buttonStatus' + activityId).classList.add('ov-hidden');
       document.querySelector('#buttonResponse' + activityId).classList.remove('ov-hidden');
@@ -322,3 +329,108 @@ ovesio.updateActivityStatus = function(activityId, status) {
     svg.classList.remove('ov-spin');
   });
 };
+
+ovesio.generateContent = function(e) {
+  const btn = e.target;
+  const originalHtml = btn.innerHTML;
+  btn.classList.add('ov-btn-loading');
+  btn.disable = true;
+  btn.innerHTML = '<span class="ov-spinner ov-spinner-sm"></span> ' + originalHtml;
+
+  const url   = btn.getAttribute('data-href');
+  const route = btn.getAttribute('data-route');
+  let segments = route.split('/');
+  let formId = 'form-' + segments[1].replace('_', '-');
+
+  const form = document.getElementById(formId);
+  const selected = [];
+  form.querySelectorAll('input[name="selected[]"]:checked').forEach(checkbox => {
+    selected.push(checkbox.value);
+  })
+
+  ajaxPost(url, { selected: selected, from: route, activity_type: 'generate_content'}).then((res) => {
+    btn.classList.remove('ov-btn-loading');
+    btn.innerHTML = originalHtml;
+    btn.disable = false;
+
+    let alert;
+    if (res.success) {
+      alert = this.buildAlert(res.message, 'success');
+    } else {
+      alert = this.buildAlert(res.message, 'danger');
+    }
+
+    form.parentNode.insertBefore(alert, form);
+    setTimeout(() => alert.remove(), 5000);
+  });
+}
+
+ovesio.generateSeo = function(e) {
+  const btn = e.target;
+  const originalHtml = btn.innerHTML;
+  btn.classList.add('ov-btn-loading');
+  btn.disable = true;
+  btn.innerHTML = '<span class="ov-spinner ov-spinner-sm"></span> ' + originalHtml;
+
+  const url   = btn.getAttribute('data-href');
+  const route = btn.getAttribute('data-route');
+  let segments = route.split('/');
+  let formId = 'form-' + segments[1].replace('_', '-');
+
+  const form = document.getElementById(formId);
+  const selected = [];
+  form.querySelectorAll('input[name="selected[]"]:checked').forEach(checkbox => {
+    selected.push(checkbox.value);
+  })
+
+  ajaxPost(url, { selected: selected, from: route, activity_type: 'generate_seo'}).then((res) => {
+    btn.classList.remove('ov-btn-loading');
+    btn.innerHTML = originalHtml;
+    btn.disable = false;
+
+    let alert;
+    if (res.success) {
+      alert = this.buildAlert(res.message, 'success');
+    } else {
+      alert = this.buildAlert(res.message, 'danger');
+    }
+
+    form.parentNode.insertBefore(alert, form);
+    setTimeout(() => alert.remove(), 5000);
+  });
+}
+
+ovesio.translate = function(e) {
+  const btn = e.target;
+  const originalHtml = btn.innerHTML;
+  btn.classList.add('ov-btn-loading');
+  btn.disable = true;
+  btn.innerHTML = '<span class="ov-spinner ov-spinner-sm"></span> ' + originalHtml;
+
+  const url   = btn.getAttribute('data-href');
+  const route = btn.getAttribute('data-route');
+  let segments = route.split('/');
+  let formId = 'form-' + segments[1].replace('_', '-');
+
+  const form = document.getElementById(formId);
+  const selected = [];
+  form.querySelectorAll('input[name="selected[]"]:checked').forEach(checkbox => {
+    selected.push(checkbox.value);
+  })
+
+  ajaxPost(url, { selected: selected, from: route, activity_type: 'translate'}).then((res) => {
+    btn.classList.remove('ov-btn-loading');
+    btn.innerHTML = originalHtml;
+    btn.disable = false;
+
+    let alert;
+    if (res.success) {
+      alert = this.buildAlert(res.message, 'success');
+    } else {
+      alert = this.buildAlert(res.message, 'danger');
+    }
+
+    form.parentNode.insertBefore(alert, form);
+    setTimeout(() => alert.remove(), 5000);
+  });
+}

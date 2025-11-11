@@ -397,9 +397,36 @@ class ModelExtensionModuleOvesio extends Model
         $generate_content_for = array_filter((array) $this->config->get($this->module_key . '_generate_content_for'));
         $generate_seo_for     = array_filter((array) $this->config->get($this->module_key . '_generate_seo_for'));
         $translate_fields     = (array) $this->config->get($this->module_key . '_translate_fields');
-        $translate_for        = array_filter($translate_fields, function($item) {
-            return array_filter($item);
-        });
+        $translate_for        = [];
+
+        foreach ((array) $this->config->get($this->module_key . '_translate_for') as $resource => $status) {
+            if (!$status) {
+                continue;
+            }
+
+            if (in_array($resource, ['categories', 'products'])) {
+                $status = array_filter($translate_fields[$resource] ?? []);
+            }
+
+            if ($status) {
+                $translate_for[$resource] = 1;
+            }
+        }
+
+        $language_settings = (array) $this->config->get($this->module_key . '_language_settings');
+
+        $translate_languages = [];
+        foreach ($language_settings as $lang_id => $ls) {
+            if (!empty($ls['translate']) && !empty($ls['code'])) {
+                $translate_languages[] = $ls['code'];
+            }
+        }
+
+        sort($translate_languages);
+
+        if (empty($translate_languages) || empty($translate_for)) { // no translation languages selected => translation = disabled
+            $translate_status = false;
+        }
 
         $generate_content_stock_0 = (bool) $this->config->get($this->module_key . '_generate_content_include_stock_0');
         $generate_seo_stock_0     = (bool) $this->config->get($this->module_key . '_generate_seo_include_stock_0');
@@ -415,7 +442,7 @@ class ModelExtensionModuleOvesio extends Model
         }
 
         if ($translate_status) {
-            $resources = array_merge($resources, array_keys($translate_for));
+            $resources = array_merge($resources, $translate_for);
         }
 
         $send_disabled_categories = 0;
@@ -437,7 +464,7 @@ class ModelExtensionModuleOvesio extends Model
         $union = [];
 
         if ($translate_status) {
-            if (in_array('attributes', $resources) && (!$resource_type || $resource_type == 'attribute_group')) {
+            if (!empty($resources['attributes']) && (!$resource_type || $resource_type == 'attribute_group')) {
                 $attributes_sql = "SELECT 'attribute_group' as resource, a.attribute_group_id AS resource_id
                     FROM " . DB_PREFIX . "attribute_description as ad
                     JOIN " . DB_PREFIX . "attribute as a ON a.attribute_id = ad.attribute_id
@@ -450,7 +477,7 @@ class ModelExtensionModuleOvesio extends Model
                 $union[] = $attributes_sql;
             }
 
-            if (in_array('options', $resources) && (!$resource_type || $resource_type == 'option')) {
+            if (!empty($resources['options']) && (!$resource_type || $resource_type == 'option')) {
                 $options_sql = "SELECT 'option' as resource, o.option_id as resource_id
                     FROM " . DB_PREFIX . "option_description as od
                     JOIN " . DB_PREFIX . "option as o ON o.option_id = od.option_id
@@ -464,7 +491,7 @@ class ModelExtensionModuleOvesio extends Model
             }
         }
 
-        if (in_array('categories', $resources)) {
+        if (!empty($resources['categories'])) {
             if (!$resource_type || $resource_type == 'category') {
                 $categories_sql = "SELECT 'category' as resource, cd.category_id as resource_id
                     FROM " . DB_PREFIX . "category_description as cd
@@ -483,7 +510,7 @@ class ModelExtensionModuleOvesio extends Model
             }
         }
 
-        if (in_array('products', $resources)) {
+        if (!empty($resources['products'])) {
             if (!$resource_type || $resource_type == 'product') {
                 $products_sql = "SELECT 'product' as resource, p.product_id as resource_id
                     FROM " . DB_PREFIX . "product as p
@@ -510,17 +537,6 @@ class ModelExtensionModuleOvesio extends Model
             return [];
         }
 
-        $language_settings = (array) $this->config->get($this->module_key . '_language_settings');
-
-        $translate_languages = [];
-        foreach ($language_settings as $lang_id => $ls) {
-            if (!empty($ls['translate']) && !empty($ls['code'])) {
-                $translate_languages[] = $ls['code'];
-            }
-        }
-
-        sort($translate_languages);
-
         $translate_languages_hash = implode(',', $translate_languages);
 
         $union_sql = "\n(" . implode(") \nUNION (", $union) . ')';
@@ -530,47 +546,66 @@ class ModelExtensionModuleOvesio extends Model
          */
         $sql = "SELECT
             r.`resource`,
-            r.resource_id,
-            ova.stale AS stale
+            r.resource_id,";
+
+            if ($translate_status) {
+                $sql .= "\n COUNT(if (ova.activity_type = 'translate', 1, null)) as count_translate,";
+                $sql .= "\n GROUP_CONCAT(IF (ova.activity_type = 'translate', ova.lang, null) ORDER BY ova.lang SEPARATOR ',') as lang_hash,";
+            }
+
+            if ($generate_content_status) {
+                $sql .= "\n COUNT(if (ova.activity_type = 'generate_content', 1, null)) as count_generate_content,";
+            }
+
+            if ($generate_seo_status) {
+                $sql .= "\n COUNT(if (ova.activity_type = 'generate_seo', 1, null)) as count_generate_seo,";
+            }
+
+            $sql .= "\n ova.stale AS stale
             FROM ($union_sql) as r
             LEFT JOIN " . DB_PREFIX . "ovesio_activity as ova ON ova.resource_type = r.resource AND ova.resource_id = r.resource_id
             GROUP BY r.`resource`, r.resource_id";
 
             $having = [];
 
-            $having[] = "stale = 1";
+            $having[] = "max(stale) = 1";
 
             if ($params['resource_type'] && $params['resource_id']) {
                 $having[] = "stale = 0"; // any existing activity for this resource
             }
 
             if ($translate_status) {
-                $having[] = "GROUP_CONCAT(IF (ova.activity_type = 'translate', ova.lang, null) ORDER BY ova.lang SEPARATOR ',') != '$translate_languages_hash'";
-                $having[] = "COUNT(if (ova.activity_type = 'translate', 1, null)) = 0";
-            }
+                $resource_in = $this->resourcesToActivities(array_keys($translate_for));
+                $resource_in[] = '-1'; // avoid error
 
-            $resource_in = array_keys($generate_content_for);
-            $resource_in[] = '-1'; // avoid error
-            $resource_in = "'" . implode("', '", $resource_in) . "'";
+                $resource_in = "'" . implode("', '", $resource_in) . "'";
+
+                $having[] = "(resource in ($resource_in) AND (count_translate = 0 OR lang_hash != '$translate_languages_hash'))";
+            }
 
             if ($generate_content_status) {
-                $having[] = "(resource in ($resource_in) AND COUNT(if (ova.activity_type = 'generate_content', 1, null)) = 0)";
+                $resource_in = $this->resourcesToActivities(array_keys($generate_content_for));
+                $resource_in[] = '-1'; // avoid error
+
+                $resource_in = "'" . implode("', '", $resource_in) . "'";
+
+                $having[] = "(resource in ($resource_in) AND count_generate_content = 0)";
             }
 
-            $resource_in = array_keys($generate_seo_for);
-            $resource_in[] = '-1'; // avoid error
-            $resource_in = "'" . implode("', '", $resource_in) . "'";
-
             if ($generate_seo_status) {
-                $having[] = "(resource in ($resource_in) AND COUNT(if (ova.activity_type = 'generate_seo', 1, null)) = 0)";
+                $resource_in = $this->resourcesToActivities(array_keys($generate_seo_for));
+                $resource_in[] = '-1'; // avoid error
+
+                $resource_in = "'" . implode("', '", $resource_in) . "'";
+
+                $having[] = "(resource in ($resource_in) AND count_generate_seo = 0)";
             }
 
             if ($having) {
                 $sql .= " HAVING " . implode(' OR ', $having);
             }
 
-            $sql .= " ORDER BY if (ova.id, 1, 0), RAND() LIMIT $limit";
-
+            $sql .= " ORDER BY if (ova.id, 0, 1), RAND() LIMIT $limit";
 
         $query = $this->db->query($sql);
 
@@ -622,5 +657,24 @@ class ModelExtensionModuleOvesio extends Model
         $query = $this->db->query("SELECT * FROM " . DB_PREFIX . "ovesio_activity WHERE id = " . (int) $id);
 
         return $query->row;
+    }
+
+    private function resourcesToActivities($resources)
+    {
+        $resource_to_activity_type = [
+            'products'   => 'product',
+            'categories' => 'category',
+            'attributes' => 'attribute_group',
+            'options'    => 'option',
+        ];
+
+        return array_map(function($res) use ($resource_to_activity_type) {
+            return isset($resource_to_activity_type[$res]) ? $resource_to_activity_type[$res] : $res;
+        }, $resources);
+    }
+
+    public function skipRunningTranslations()
+    {
+        $this->db->query("UPDATE " . DB_PREFIX . "ovesio_activity SET stale = 0, status = 'skipped' WHERE activity_type = 'translate' AND status = 'started'");
     }
 }

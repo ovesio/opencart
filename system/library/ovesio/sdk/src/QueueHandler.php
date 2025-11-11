@@ -23,6 +23,7 @@ class QueueHandler
     private $log;
     private $debug = [];
     private $to_langs = [];
+    private $force_stale = false;
 
     /**
      * The list of activities that will be processed in order of priority
@@ -64,11 +65,15 @@ class QueueHandler
      */
     private function getOption($key, $default = null)
     {
-        return isset($this->options[$key]) ? $this->options[$key] : $default;
+        $options = $this->options;
+
+        return isset($options[$key]) ? $options[$key] : $default;
     }
 
     public function processQueue($params = [])
     {
+        $this->force_stale = !empty($params['force_stale']);
+
         $list = $this->model->getCronList($params);
 
         // setup activity groups
@@ -78,9 +83,19 @@ class QueueHandler
             }
         }
 
-        $this->handleGenerateContentQueue();
-        $this->handleGenerateSeoQueue();
-        $this->handleTranslateQueue();
+        if (!empty($params['activity_type'])) {
+            if ($params['activity_type'] == 'generate_content') {
+                $this->handleGenerateContentQueue();
+            } elseif ($params['activity_type'] == 'generate_seo') {
+                $this->handleGenerateSeoQueue();
+            } elseif ($params['activity_type'] == 'translate') {
+                $this->handleTranslateQueue();
+            }
+        } else {
+            $this->handleGenerateContentQueue();
+            $this->handleGenerateSeoQueue();
+            $this->handleTranslateQueue();
+        }
 
         $this->activity_groups = array_fill_keys(array_keys($this->activity_groups), []); // reset
 
@@ -203,7 +218,6 @@ class QueueHandler
 
         if ($activity_type == 'translate') { // scalar
             foreach ($this->to_langs as $lang) {
-
                 foreach ($resource_ids as $resource_id) {
                     $list_item = [
                         'resource_type' => $resource_type,
@@ -268,7 +282,7 @@ class QueueHandler
         $category_activities = [];
 
         foreach ($activities as $resource => $started_activity) {
-            if ($started_activity && $started_activity['status'] == 'started') {
+            if ($started_activity && $started_activity['status'] == 'started') { // if activity is started, we keep it staled until completion
                 list($resource_type, $resource_id) = explode('/', $resource);
                 $this->debug($resource_type, $resource_id, 'generate_content', 'in_progress', 'started');
                 $this->discardNextEvents('generate_content', $resource);
@@ -411,12 +425,10 @@ class QueueHandler
             }
 
             // remove description from hash to avoid recreating it everytime
-            $_push = $push;
-            if (!empty($_push['content']['description'])) {
-                unset($_push['content']['description']);
-            }
+            $hashable_push = $push;
+            unset($hashable_push['content']['description']);
 
-            $hash = $this->contentHash($_push['content']);
+            $hash = $this->contentHash($hashable_push['content']);
             $this->activity_hash['generate_content'][$push['ref']] = $hash;
 
             if (!$this->activityIsStaled($activities, 'product', $product['product_id'], $hash, 'generate_content')) {
@@ -425,17 +437,26 @@ class QueueHandler
 
             $description_lengths_min = $this->getOption('generate_content_when_description_length');
 
-            $payload_length = 0;
-            foreach ($_push['content'] as $key => $val) {
-                if (in_array($key, ['name', 'description'])) {
-                    $payload_length += strlen($val);
+            $payload_length = $this->getAiRequestPayloadLength($push['content']);
+            if ($payload_length <= 25) { // fallback
+                if (isset($push['content']['description'])) {
+                    $push['content']['description'] = $push['content']['name'] . "\n" . $push['content']['description'];
+                } else {
+                    $push['content']['description'] = $push['content']['name'];
                 }
+
+                $payload_length = $this->getAiRequestPayloadLength($push['content']);
             }
 
-            // The description is longer than minimum, send to translation
-            if (strlen($_description) > $description_lengths_min['products'] || $payload_length < 25) { // avoid min length api limitation
+            if ($payload_length < 25) { // avoid min length api limitation
                 $this->debug('product', $product['product_id'], 'generate_content', 'min_length_not_met');
-                $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "Minimum description length not met", 'skipped');
+                $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "Minimum payload length of 25 chars not met", 'skipped');
+                continue;
+            }
+
+            if (strlen($_description) > $description_lengths_min['products']) {
+                $this->debug('product', $product['product_id'], 'generate_content', 'max_length_not_met');
+                $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "Description exceeds the " . $description_lengths_min['products'] . ' character limit' , 'skipped');
                 continue;
             }
 
@@ -476,29 +497,39 @@ class QueueHandler
             $push['content'] = $this->decode($push['content']);
 
             // remove description from hash to avoid recreating it everytime
-            $_push = $push;
-            if (!empty($_push['content']['description'])) {
-                unset($_push['content']['description']);
-            }
+            $hashable_push = $push;
+            unset($hashable_push['content']['description']);
 
-            $hash = $this->contentHash($_push['content']);
+            $hash = $this->contentHash($hashable_push['content']);
             $this->activity_hash['generate_content'][$push['ref']] = $hash;
 
             if (!$this->activityIsStaled($activities, 'category', $category['category_id'], $hash, 'generate_content')) {
                 continue;
             }
 
-            $payload_length = 0;
-            foreach ($_push['content'] as $key => $val) {
-                if (in_array($key, ['name', 'description'])) {
-                    $payload_length += strlen($val);
+            $description_lengths_min = $this->getOption('generate_content_when_description_length');
+
+            // try to save resource from being ignored by minimum 25 chars limit
+            $payload_length = $this->getAiRequestPayloadLength($push['content']);
+            if ($payload_length <= 25) { // fallback
+                if (isset($push['content']['description'])) {
+                    $push['content']['description'] = $push['content']['name'] . "\n" . $push['content']['description'];
+                } else {
+                    $push['content']['description'] = $push['content']['name'];
                 }
+
+                $payload_length = $this->getAiRequestPayloadLength($push['content']);
             }
 
-            // The description is longer than minimum, send to translation
-            if (strlen($_description) > $this->getOption('minimum_category_descrition', 0) || $payload_length <= 25) { // avoid min length api limitation
+            if ($payload_length < 25) { // avoid min length api limitation
                 $this->debug('category', $category['category_id'], 'generate_content', 'min_length_not_met');
-                $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "Minimum description length not met", 'skipped');
+                $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "Minimum payload length of 25 chars not met", 'skipped');
+                continue;
+            }
+
+            if (strlen($_description) > $description_lengths_min['categories']) {
+                $this->debug('category', $category['category_id'], 'generate_content', 'max_length_not_met');
+                $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "Description exceeds the " . $description_lengths_min['categories'] . ' character limit' , 'skipped');
                 continue;
             }
 
@@ -533,7 +564,7 @@ class QueueHandler
         $category_activities = [];
 
         foreach ($activities as $resource => $started_activity) {
-            if ($started_activity && $started_activity['status'] == 'started') {
+            if ($started_activity && $started_activity['status'] == 'started') { // if activity is started, we keep it staled until completion
                 list($resource_type, $resource_id) = explode('/', $resource);
                 $this->debug($resource_type, $resource_id, 'generate_seo', 'in_progress', 'started');
                 $this->discardNextEvents('generate_seo', $resource);
@@ -755,6 +786,7 @@ class QueueHandler
     protected function handleTranslateQueue()
     {
         if (empty($this->to_langs)) {
+            $this->model->skipRunningTranslations();
             return;
         }
 
@@ -762,13 +794,14 @@ class QueueHandler
         $translate_status           = (bool) $this->getOption('translate_status');
         $translate_include_disabled = array_filter((array) $this->getOption('translate_include_disabled', []));
         $send_stock_0_products      = (bool) $this->getOption('translate_include_stock_0');
-        $translate_fields           = (array) $this->getOption('translate_fields', []);
-
-        $translate_for = array_filter($translate_fields, function ($item) {
-            return array_filter($item);
-        });
 
         if (!$translate_status) {
+            return;
+        }
+
+        $translate_for = $this->getTranslateFor();
+
+        if (empty($translate_for)) {
             return;
         }
 
@@ -781,7 +814,7 @@ class QueueHandler
 
         foreach ($activities as $resource => $started_translate_activities) {
             foreach ($started_translate_activities as $started_activity) {
-                if ($started_activity['status'] == 'started') {
+                if ($started_activity['status'] == 'started') { // if activity is started, we keep it staled until completion
                     list($resource_type, $resource_id) = explode('/', $resource);
                     $this->debug($resource_type, $resource_id, 'translate', 'in_progress', 'started');
                     continue 2; // we do not start new translations until the current translation session on the respective resource is finished
@@ -904,10 +937,8 @@ class QueueHandler
         $category_ids = array_keys($activities);
         $this->debug('category', $category_ids, 'translate', 'not_found'); // we make presence known on each iteration
 
+        $translate_for = $this->getTranslateFor();
         $translate_fields = (array) $this->getOption('translate_fields', []);
-        $translate_for = array_filter($translate_fields, function ($item) {
-            return array_filter($item);
-        });
 
         if (empty($translate_for['categories'])) {
             $this->debug('category', $category_ids, 'translate', 'skipped', 'disabled');
@@ -1063,15 +1094,9 @@ class QueueHandler
         $attribute_group_ids = array_keys($activities);
         $this->debug('attribute_group', $attribute_group_ids, 'translate', 'not_found'); // we make presence known on each iteration
 
-        $translate_fields = (array)$this->getOption('translate_fields', []);
+        $translate_for = $this->getTranslateFor();
 
-        $translate_for = array_filter($translate_fields, function ($item) {
-            return array_filter($item);
-        });
-
-        $translate_fields = $translate_fields['attributes'];
-
-        if (empty($translate_for['attributes']) || empty($translate_fields['name'])) {
+        if (empty($translate_for['attributes'])) {
             $this->debug('attribute_group', $attribute_group_ids, 'translate', 'skipped', 'disabled');
             $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "Groups and Attributes translation is disabled", 'skipped');
             return;
@@ -1138,15 +1163,9 @@ class QueueHandler
     {
         $attribute_ids = array_keys($activities);
 
-        $translate_fields = (array)$this->getOption('translate_fields', []);
+        $translate_for = $this->getTranslateFor();
 
-        $translate_for = array_filter($translate_fields, function ($item) {
-            return array_filter($item);
-        });
-
-        $translate_fields = $translate_fields['attributes'];
-
-        if (empty($translate_for['attributes']) || empty($translate_fields['name'])) {
+        if (empty($translate_for['attributes'])) {
             $attributes          = $this->model->getAttributes($attribute_ids);
             $attribute_group_ids = array_column($attributes, 'attribute_group_id');
             $this->debug('attribute_group', $attribute_group_ids, 'translate', 'skipped', 'disabled');
@@ -1218,15 +1237,10 @@ class QueueHandler
     public function pushTranslateOptionRequests($request, $activities, $include_disabled = false)
     {
         $option_ids = array_keys($activities);
-        $translate_fields = (array)$this->getOption('translate_fields', []);
 
-        $translate_for = array_filter($translate_fields, function ($item) {
-            return array_filter($item);
-        });
+        $translate_for = $this->getTranslateFor();
 
-        $translate_fields = $translate_fields['options'];
-
-        if (empty($translate_for['options']) || empty($translate_fields['name'])) {
+        if (empty($translate_for['options'])) {
             $this->debug('option', $option_ids, 'translate', 'skipped', 'disabled');
             $this->ignoreMoveOnNextEvent('option', $option_ids, 'translate', "Options translation is disabled", 'skipped');
             return;
@@ -1353,6 +1367,11 @@ class QueueHandler
 
     private function activityIsStaled($activities, $resource_type, $resource_id, $hash, $activity_type)
     {
+        if ($this->force_stale) {
+            $this->debug($resource_type, $resource_id, $activity_type, 'force_stale');
+            return true;
+        }
+
         if (empty($activities[$resource_id])) {
             $this->debug($resource_type, $resource_id, $activity_type, 'new');
             return true;
@@ -1361,6 +1380,13 @@ class QueueHandler
         $activity = $activities[$resource_id];
 
         if ($activity_type == 'translate') {
+            // if a new language has been added, stale is true for sure
+            $existing_langs = array_column($activity, 'lang');
+            if (array_diff($this->to_langs, $existing_langs)) {
+                $this->debug($resource_type, $resource_id, $activity_type, 'changed', 'new_language_added');
+                return true;
+            }
+
             $activity = reset($activity);
         }
 
@@ -1432,5 +1458,39 @@ class QueueHandler
         $hash_string = $prefix . '.' . hash('sha256', $hash_string) . '.' . $suffix;
 
         return $hash_string;
+    }
+
+    private function getTranslateFor()
+    {
+        $translate_fields = (array) $this->getOption('translate_fields', []);
+
+        $translate_for = [];
+        foreach ((array) $this->getOption('translate_for', []) as $resource => $status) {
+            if (!$status) {
+                continue;
+            }
+
+            if (in_array($resource, ['categories', 'products'])) {
+                $status = array_filter($translate_fields[$resource] ?? []);
+            }
+
+            if ($status) {
+                $translate_for[$resource] = 1;
+            }
+        }
+
+        return $translate_for;
+    }
+
+    private function getAiRequestPayloadLength($content)
+    {
+        $payload_length = 0;
+        foreach ($content as $key => $val) {
+            if (in_array($key, ['name', 'description'])) {
+                $payload_length += strlen($val);
+            }
+        }
+
+        return $payload_length;
     }
 }
