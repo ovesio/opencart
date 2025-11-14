@@ -143,15 +143,19 @@ class ControllerExtensionModuleOvesioCallback extends Controller
         $queue_handler = $this->ovesio->buildQueueHandler();
 
         if (!defined('OVESIO_CALLBACK_QUEUE_PROCESSING') || !OVESIO_CALLBACK_QUEUE_PROCESSING) {
-            $queue_handler->processQueue([
-                'resource_type' => $resource,
-                'resource_id'   => $resource_id,
-            ]);
+            if (empty($this->request->get['manual'])) { // daca nu a fost manual facut request-ul
+                $queue_handler->processQueue([
+                    'resource_type' => $resource,
+                    'resource_id'   => $resource_id,
+                    'from_callback' => true,
+                ]);
+            }
         }
 
         $output = array_merge($this->output, [
             'success' => true,
             'queue'   => $queue_handler->getDebug(),
+            'manual' => !empty($this->request->get['manual']),
         ]);
 
         $this->setOutput($output);
@@ -474,7 +478,12 @@ class ControllerExtensionModuleOvesioCallback extends Controller
         if ($payload && $payload['status'] == 'completed') {
             // set data on php://input then call handle
             $this->request->get['type'] = $activity['activity_type'];
+            $this->request->get['manual'] = true;
             $this->request->server['REQUEST_METHOD'] = 'POST';
+
+            $payload['to'] = $payload['to'] ?: 'auto';
+            $payload['content'] = $payload['content'] ?? $payload['data'];
+            unset($payload['data']);
 
             $payload = $this->request->clean($payload);
 

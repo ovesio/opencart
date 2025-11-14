@@ -62,7 +62,7 @@
             <?php foreach ($language_settings as $lang): ?>
               <?php if ($lang['translate']): ?>
                 <?php $count++; ?>
-                <img src="<?php echo $lang['flag']; ?>" width="16px" height="auto" title="<?php echo $lang['name']; ?>">
+                <img src="<?php echo $lang['flag']; ?>" width="16px" height="auto" title="<?php echo $lang['name']; ?>" onerror="this.title=' '">
               <?php endif; ?>
             <?php endforeach; ?>
             <?php if ($count == 0): ?>

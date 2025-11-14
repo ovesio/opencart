@@ -118,6 +118,7 @@ ovesio.connectAPI = function(e) {
         form.querySelector('#default_language_group').classList.remove('ov-hidden');
 
         const selectNode = form.querySelector('#default_language');
+        res.languages.unshift({ code: 'auto', name: 'Auto' });
         this.selectOptions(selectNode, res.languages, 'name', 'code');
         selectNode.disabled = false;
 

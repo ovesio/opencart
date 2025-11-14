@@ -9,6 +9,9 @@
           <div class="ov-top-bar">
             <div><img src="view/image/logo-ovesio-sm.png" style="height:25px; width: auto" alt="Ovesio Logo"></div>
             <div>
+              <?php if ($count_errors): ?>
+              <a class="ov-badge ov-badge-danger" href="<?php echo $url_list_errors; ?>" target="_blank"><?php echo $text_errors; ?>: <?php echo $count_errors; ?></a>
+              <?php endif; ?>
               <a href="<?php echo $url_list; ?>" type="button" class="ov-btn ov-btn-secondary">
                 <?php echo $text_activity_list; ?>
               </a>

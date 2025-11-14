@@ -25,6 +25,8 @@ class QueueHandler
     private $to_langs = [];
     private $force_stale = false;
 
+    private $from_callback = false;
+
     /**
      * The list of activities that will be processed in order of priority
      */
@@ -75,6 +77,8 @@ class QueueHandler
         $this->force_stale = !empty($params['force_stale']);
 
         $list = $this->model->getCronList($params);
+
+        $this->from_callback = !empty($params['from_callback']);
 
         // setup activity groups
         foreach ($list as $resource => $activities) {
@@ -212,7 +216,7 @@ class QueueHandler
         return $data;
     }
 
-    protected function ignoreMoveOnNextEvent($resource_type, $resource_ids, $activity_type, $message = '', $status = 'completed', $request = null)
+    protected function ignoreMoveOnNextEvent($resource_type, $resource_ids, $activity_type, $message = null, $status = 'completed', $request = null)
     {
         $resource_ids = (array) $resource_ids;
 
@@ -224,11 +228,14 @@ class QueueHandler
                         'resource_id'   => $resource_id,
                         'lang'          => $lang,
                         'activity_type' => $activity_type,
-                        'message'       => $message,
                         'request'       => $request ? json_encode($request) : null,
                         'stale'         => 0,
                         'updated_at'    => date('Y-m-d H:i:s')
                     ];
+
+                    if ($message) {
+                        $list_item['message'] = $message;
+                    }
 
                     if ($status) {
                         $list_item['status'] = $status;
@@ -248,11 +255,14 @@ class QueueHandler
                     'resource_id'   => $resource_id,
                     'lang'          => $default_language,
                     'activity_type' => $activity_type,
-                    'message'       => $message,
                     'request'       => $request ? json_encode($request) : null,
                     'stale'         => 0,
                     'updated_at'    => date('Y-m-d H:i:s')
                 ];
+
+                if ($message) {
+                    $list_item['message'] = $message;
+                }
 
                 if ($status) {
                     $list_item['status'] = $status;
@@ -282,14 +292,20 @@ class QueueHandler
         $category_activities = [];
 
         foreach ($activities as $resource => $started_activity) {
-            if ($started_activity && $started_activity['status'] == 'started') { // if activity is started, we keep it staled until completion
-                list($resource_type, $resource_id) = explode('/', $resource);
-                $this->debug($resource_type, $resource_id, 'generate_content', 'in_progress', 'started');
-                $this->discardNextEvents('generate_content', $resource);
-                continue;
-            }
-
             list($resource_type, $resource_id) = explode('/', $resource);
+
+            if (!$this->getOption('manual') && $started_activity) {
+                if ($started_activity['status'] == 'started') { // if activity is started, we keep it staled until completion
+                    $this->debug($resource_type, $resource_id, 'generate_content', 'in_progress', 'started');
+                    $this->discardNextEvents('generate_content', $resource);
+                    continue;
+                } elseif ($started_activity['status'] == 'error' && !$started_activity['stale']) {
+                    // allow re-processing errored activities only if staled
+                    $this->debug($resource_type, $resource_id, 'generate_content', 'error', 'is in error status and not staled');
+                    $this->discardNextEvents('generate_content', $resource);
+                    continue;
+                }
+            }
 
             if ($resource_type == 'product') {
                 $product_activities[$resource_id] = $started_activity;
@@ -302,12 +318,18 @@ class QueueHandler
         $server       = $this->getOption('server_url', '');
         $workflow     = $this->getOption('generate_content_workflow');
         $callback_url = $server . 'index.php?route=extension/module/ovesio/callback&type=generate_content&hash=' . $hash;
+        if ($this->getOption('manual')) {
+            $callback_url .= '&manual=true';
+        }
+
         $to_lang      = $this->getOption('default_language');
 
         $request = $this->api->generateDescription()
         ->workflow($workflow['id'])
-        ->to($to_lang)
         ->callbackUrl($callback_url);
+        if ($to_lang != 'auto') {
+            $request = $request->to($to_lang);
+        }
 
         if (!empty($product_activities)) {
             if (!empty($generate_content_for['products'])) {
@@ -448,12 +470,6 @@ class QueueHandler
                 $payload_length = $this->getAiRequestPayloadLength($push['content']);
             }
 
-            if ($payload_length < 25) { // avoid min length api limitation
-                $this->debug('product', $product['product_id'], 'generate_content', 'min_length_not_met');
-                $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "Minimum payload length of 25 chars not met", 'skipped');
-                continue;
-            }
-
             if (strlen($_description) > $description_lengths_min['products']) {
                 $this->debug('product', $product['product_id'], 'generate_content', 'max_length_not_met');
                 $this->ignoreMoveOnNextEvent('product', $product['product_id'], 'generate_content', "Description exceeds the " . $description_lengths_min['products'] . ' character limit' , 'skipped');
@@ -521,12 +537,6 @@ class QueueHandler
                 $payload_length = $this->getAiRequestPayloadLength($push['content']);
             }
 
-            if ($payload_length < 25) { // avoid min length api limitation
-                $this->debug('category', $category['category_id'], 'generate_content', 'min_length_not_met');
-                $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "Minimum payload length of 25 chars not met", 'skipped');
-                continue;
-            }
-
             if (strlen($_description) > $description_lengths_min['categories']) {
                 $this->debug('category', $category['category_id'], 'generate_content', 'max_length_not_met');
                 $this->ignoreMoveOnNextEvent('category', $category['category_id'], 'generate_content', "Description exceeds the " . $description_lengths_min['categories'] . ' character limit' , 'skipped');
@@ -538,10 +548,6 @@ class QueueHandler
             $this->discardNextEvents('generate_description', $push['ref']);
 
             $request->data($push['content'], $push['ref']);
-        }
-
-        if (!$request->getData()) {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_content', "No data left to process");
         }
     }
 
@@ -564,14 +570,20 @@ class QueueHandler
         $category_activities = [];
 
         foreach ($activities as $resource => $started_activity) {
-            if ($started_activity && $started_activity['status'] == 'started') { // if activity is started, we keep it staled until completion
-                list($resource_type, $resource_id) = explode('/', $resource);
-                $this->debug($resource_type, $resource_id, 'generate_seo', 'in_progress', 'started');
-                $this->discardNextEvents('generate_seo', $resource);
-                continue;
-            }
-
             list($resource_type, $resource_id) = explode('/', $resource);
+
+            if (!$this->getOption('manual') && $started_activity) { // if activity is started, we keep it staled until completion
+                if ($started_activity['status'] == 'started') {
+                    $this->debug($resource_type, $resource_id, 'generate_seo', 'in_progress', 'started');
+                    $this->discardNextEvents('generate_seo', $resource);
+                    continue;
+                } elseif ($started_activity['status'] == 'error' && !$started_activity['stale']) {
+                    // allow re-processing errored activities only if staled
+                    $this->debug($resource_type, $resource_id, 'generate_seo', 'error', 'is in error status and not staled');
+                    $this->discardNextEvents('generate_seo', $resource);
+                    continue;
+                }
+            }
 
             if ($resource_type == 'product') {
                 $product_activities[$resource_id] = $started_activity;
@@ -584,12 +596,18 @@ class QueueHandler
         $server       = $this->getOption('server_url', '');
         $workflow     = $this->getOption('generate_seo_workflow');
         $callback_url = $server . 'index.php?route=extension/module/ovesio/callback&type=generate_seo&hash=' . $hash;
+        if ($this->getOption('manual')) {
+            $callback_url .= '&manual=true';
+        }
+
         $to_lang      = $this->getOption('default_language');
 
         $request = $this->api->generateSeo()
         ->workflow($workflow['id'])
-        ->to($to_lang)
         ->callbackUrl($callback_url);
+        if ($to_lang != 'auto') {
+            $request = $request->to($to_lang);
+        }
 
         if (!empty($product_activities)) {
             if (!empty($generate_seo_for['products'])) {
@@ -720,11 +738,6 @@ class QueueHandler
 
             $request->data($push['content'], $push['ref']);
         }
-
-        if (!$request->getData()) {
-            $this->ignoreMoveOnNextEvent('product', $product_ids, 'generate_seo', "No data left to process", 'skipped');
-            $this->debug('product', str_replace('product/', '', array_column($request->getData(), 'ref')), 'generate_seo', "Prepare data");
-        }
     }
 
     protected function pushGenerateCategorySeoRequests($request, $activities, $include_disabled = false)
@@ -742,7 +755,15 @@ class QueueHandler
         }
 
         if (empty($categories)) {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_seo', "Not found or disabled", 'skipped');
+            if ($only_for_action) {
+                // he would have, if it wasn't for that condition
+                $categories = $this->model->getCategories($category_ids, $include_disabled);
+                if (empty($categories)) {
+                    // still not found
+                    $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_seo', "Not found or disabled", 'skipped');
+                }
+            }
+
             return;
         }
 
@@ -774,10 +795,6 @@ class QueueHandler
             $this->discardNextEvents('generate_seo', $push['ref']);
 
             $request->data($push['content'], $push['ref']);
-        }
-
-        if (!$request->getData()) {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'generate_seo', "No data left to process", 'skipped');
         }
     }
 
@@ -813,15 +830,20 @@ class QueueHandler
         $option_activities          = [];
 
         foreach ($activities as $resource => $started_translate_activities) {
+            list($resource_type, $resource_id) = explode('/', $resource);
+
             foreach ($started_translate_activities as $started_activity) {
-                if ($started_activity['status'] == 'started') { // if activity is started, we keep it staled until completion
-                    list($resource_type, $resource_id) = explode('/', $resource);
-                    $this->debug($resource_type, $resource_id, 'translate', 'in_progress', 'started');
-                    continue 2; // we do not start new translations until the current translation session on the respective resource is finished
+                if (!$this->getOption('manual')) { // if activity is started, we keep it staled until completion
+                    if ($started_activity['status'] == 'started') {
+                        $this->debug($resource_type, $resource_id, 'translate', 'in_progress', 'started');
+                        continue 2; // we do not start new translations until the current translation session on the respective resource is finished
+                    } elseif ($started_activity['status'] == 'error' && !$started_activity['stale']) {
+                        // allow re-processing errored activities only if staled
+                        $this->debug($resource_type, $resource_id, 'translate', 'error', 'is in error status and not staled');
+                        continue 2;
+                    }
                 }
             }
-
-            list($resource_type, $resource_id) = explode('/', $resource);
 
             if ($resource_type == 'product') {
                 $product_activities[$resource_id] = $started_translate_activities;
@@ -840,6 +862,10 @@ class QueueHandler
         $server       = $this->getOption('server_url', '');
         $workflow     = $this->getOption('translate_workflow');
         $callback_url = $server . 'index.php?route=extension/module/ovesio/callback&type=translate&hash=' . $hash;
+        if ($this->getOption('manual')) {
+            $callback_url .= '&manual=true';
+        }
+
         $from_lang    = $this->getOption('default_language', 'en');
 
         $languages = $this->getOption('language_settings', []);
@@ -990,10 +1016,6 @@ class QueueHandler
 
             $request->data($push['content'], $push['ref']);
         }
-
-        if (!$request->getData()) {
-            $this->ignoreMoveOnNextEvent('category', $category_ids, 'translate', "No data left to process", 'skipped');
-        }
     }
 
     protected function pushTranslateProductRequests($request, $activities, $include_disabled = false, $include_stock_0 = true)
@@ -1083,10 +1105,6 @@ class QueueHandler
 
             $request->data($push['content'], $push['ref']);
         }
-
-        if (!$request->getData()) {
-            $this->ignoreMoveOnNextEvent('product', $product_ids, 'translate', "No data left to process");
-        }
     }
 
     protected function pushTranslateAttributeGroupRequests($request, $activities, $include_disabled = false)
@@ -1155,7 +1173,7 @@ class QueueHandler
         }
 
         if (!$request->getData()) {
-            $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "No data left to process");
+            $this->ignoreMoveOnNextEvent('attribute_group', $attribute_group_ids, 'translate', "No data left to process", 'skipped');
         }
     }
 
@@ -1362,6 +1380,16 @@ class QueueHandler
                 'stale'         => 0,
                 'updated_at'    => date('Y-m-d H:i:s')
             ]);
+
+            $this->debug($resource_type, $resource_id, $activity_type, 'error', $error);
+        }
+
+        foreach ($data as $index => $_response) {
+            if (!isset($item_errors[$index])) {
+                list($resource_type, $resource_id) = explode('/', $_response['ref']);
+
+                $this->debug($resource_type, $resource_id, $activity_type, 'not_sent', 'Item is ok, but package sending failed');
+            }
         }
     }
 
@@ -1390,8 +1418,9 @@ class QueueHandler
             $activity = reset($activity);
         }
 
-        if ($activity['status'] == 'error') {
-            return true; // we have introduced skipped status, so error status may be retried
+        $message = null; // do not alter message, only if completed
+        if ($activity['status'] == 'completed' && !$this->from_callback) { // da impresia pe callback ca ar face o dubla procesare
+            $message = "Hash did not changed";
         }
 
         $staled = false;
@@ -1400,14 +1429,14 @@ class QueueHandler
 
             if ($old_hash == $hash) {
                 $this->debug($resource_type, $resource_id, $activity_type, 'unchanged', $activity['status']);
-                $this->ignoreMoveOnNextEvent($resource_type, $resource_id, $activity_type, "Hash did not changed", null);
+                $this->ignoreMoveOnNextEvent($resource_type, $resource_id, $activity_type, $message, null);
             } else {
                 $this->debug($resource_type, $resource_id, $activity_type, 'changed');
                 $staled = true;
             }
         } else {
             $this->debug($resource_type, $resource_id, $activity_type, 'unchanged', $activity['status']);
-            $this->ignoreMoveOnNextEvent($resource_type, $resource_id, $activity_type, "Hash did not changed", null);
+            $this->ignoreMoveOnNextEvent($resource_type, $resource_id, $activity_type, $message, null);
         }
 
         return $staled;

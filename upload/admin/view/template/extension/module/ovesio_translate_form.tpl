@@ -231,6 +231,7 @@
               <td>
                 <select name="language_settings[<?php echo $language_id; ?>][translate_from]" class="ov-form-control">
                   <option value="" disabled><?php echo $text_select_source_language; ?></option>
+                  <option value="auto">Auto</option>
                   <?php foreach ($ovesio_languages as $code => $ov_lang): ?>
                   <?php if ($language_settings[$language_id]['translate_from'] == $code): ?>
                   <option value="<?php echo $code; ?>" selected><?php echo $ov_lang['name']; ?></option>

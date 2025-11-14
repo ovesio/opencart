@@ -27,7 +27,7 @@ class Ovesio extends Model
         $default_language = $this->config->get($this->module_key . '_default_language');
         $config_language  = $this->config->get('config_language');
 
-        if (stripos($default_language, $config_language) === 0) {
+        if (stripos($default_language, $config_language) === 0 || $default_language == 'auto') {
             $default_language_id = $this->config->get('config_language_id');
         } else {
             $query = $this->db->query("SELECT language_id FROM " . DB_PREFIX . "language WHERE code LIKE '" . $this->db->escape($default_language) . "%' LIMIT 1");
@@ -52,7 +52,7 @@ class Ovesio extends Model
         return $this->module_key;
     }
 
-    public function buildQueueHandler()
+    public function buildQueueHandler($manual = false)
     {
         $options = [];
 
@@ -67,8 +67,9 @@ class Ovesio extends Model
         }
 
         // Add additional options
-        $options['server_url'] = defined('HTTPS_CATALOG') ? HTTPS_CATALOG : (defined('HTTPS_SERVER') ? HTTPS_SERVER : '');
+        $options['server_url']          = defined('HTTPS_CATALOG') ? HTTPS_CATALOG : (defined('HTTPS_SERVER') ? HTTPS_SERVER : '');
         $options['default_language_id'] = $this->default_language_id;
+        $options['manual']              = $manual;
 
         $api_url   = $this->config->get($this->module_key . '_api_url');
         $api_token = $this->config->get($this->module_key . '_api_token');

@@ -36,7 +36,7 @@ class ControllerExtensionModuleOvesioManual extends Controller
 
         $resource_type = $ovesio_route_resource_type[$this->request->get['from']];
 
-        $queue_handler = $this->ovesio->buildQueueHandler();
+        $queue_handler = $this->ovesio->buildQueueHandler(true);
 
         $debug = [];
         foreach ($this->request->post['selected'] as $resource_id) {

@@ -326,10 +326,6 @@
               <small class="ov-text-muted"><?php echo $text_showing_entries; ?> <?php echo $start; ?>-<?php echo $end; ?> <?php echo $text_of; ?> <?php echo $total; ?> <?php echo $text_entries; ?></small>
             </div>
           </div>
-          <?php } else { ?>
-          <div style="text-align: center; padding: 2rem; color: #6c757d;">
-            <p><?php echo $text_no_results_found; ?></p>
-          </div>
           <?php } ?>
 
         </div>
@@ -371,6 +367,8 @@ function applyFilters() {
   Object.keys(filters).forEach(key => {
     url.searchParams.set(key, filters[key]);
   });
+
+  url.searchParams.set('page', '1'); // Reset to first page on filter apply
 
   // Navigate to new page
   window.location.href = url.toString();

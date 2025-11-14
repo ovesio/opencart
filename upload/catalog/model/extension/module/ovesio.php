@@ -19,7 +19,7 @@ class ModelExtensionModuleOvesio extends Model
         $default_language = $this->config->get($this->module_key . '_default_language');
         $config_language  = $this->config->get('config_language');
 
-        if (stripos($default_language, $config_language) === 0) {
+        if (stripos($default_language, $config_language) === 0 || $default_language == 'auto') {
             $default_language_id = $this->config->get('config_language_id');
         } else {
             $query = $this->db->query("SELECT language_id FROM " . DB_PREFIX . "language WHERE code LIKE '" . $this->db->escape($default_language) . "%' LIMIT 1");
@@ -605,7 +605,7 @@ class ModelExtensionModuleOvesio extends Model
                 $sql .= " HAVING " . implode(' OR ', $having);
             }
 
-            $sql .= " ORDER BY if (ova.id, 0, 1), RAND() LIMIT $limit";
+            $sql .= " ORDER BY if (ova.id AND ova.status != 'error', 0, 1), RAND() LIMIT $limit";
 
         $query = $this->db->query($sql);
 
@@ -635,7 +635,7 @@ class ModelExtensionModuleOvesio extends Model
         $conditions_sql = implode(' OR ', $conditions_sql);
 
         // am obtinut lista elementelor, acum trebuie sa le obtinem la fiecare si activitatile parcurse
-        $sql = "SELECT id, resource_type, resource_id, activity_type, lang, activity_id, hash, status, updated_at FROM " . DB_PREFIX . "ovesio_activity WHERE $conditions_sql";
+        $sql = "SELECT id, resource_type, resource_id, activity_type, lang, activity_id, hash, status, stale, updated_at FROM " . DB_PREFIX . "ovesio_activity WHERE $conditions_sql";
 
         $query = $this->db->query($sql);
 

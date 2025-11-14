@@ -29,14 +29,14 @@ class ControllerExtensionModuleOvesio extends Controller
             $this->module_key = 'module_ovesio';
             $this->event_model = 'setting/event';
         }
-
-		$this->load->model('setting/setting');
     }
 
 	public function index() {
 		$data = $this->load->language('extension/module/ovesio');
 
 		$this->document->setTitle(strip_tags($this->language->get('heading_title')));
+
+        $this->load->model('setting/setting');
 
         $settings = $this->model_setting_setting->getSetting($this->module_key);
 
@@ -72,6 +72,11 @@ class ControllerExtensionModuleOvesio extends Controller
         $data['generate_seo_card']     = $this->generateSeoCard(true);
         $data['translate_card']        = $this->translateCard(true);
 
+        $this->load->model('extension/module/ovesio');
+
+        $data['count_errors']    = $this->model_extension_module_ovesio->getActivitiesTotal(['status' => 'error']);
+        $data['url_list_errors'] = $this->url->link('extension/module/ovesio/activityList', $this->tokenQs() . '&status=error');
+
 		$data['header']      = $this->load->controller('common/header');
 		$data['column_left'] = $this->load->controller('common/column_left');
 		$data['footer']      = $this->load->controller('common/footer');
@@ -81,7 +86,9 @@ class ControllerExtensionModuleOvesio extends Controller
 
     public function install()
     {
+        $this->load->model('setting/setting');
         $this->load->model('extension/module/ovesio');
+
         $this->model_extension_module_ovesio->install();
 
         $this->load->model($this->event_model);
@@ -110,6 +117,8 @@ class ControllerExtensionModuleOvesio extends Controller
         foreach ($events as $key => $value) {
             $model->addEvent($this->module_key, $key, $value);
         }
+
+        $model->addEvent($this->module_key, 'admin/view/common/column_left/before', 'extension/module/ovesio/column_left_before', 333);
 
         $hash = md5(uniqid(rand(), true));
 
@@ -192,6 +201,28 @@ class ControllerExtensionModuleOvesio extends Controller
         $this->model_setting_setting->editSetting($this->module_key, $settings);
     }
 
+    public function column_left_before($route, &$data)
+    {
+        if ($this->user->hasPermission('access', 'extension/module/ovesio')) {
+            $name = 'Ovesio AI';
+
+            $this->load->model('extension/module/ovesio');
+
+            $count_errors = $this->model_extension_module_ovesio->getActivitiesTotal(['status' => 'error']); $count_errors = 1;
+            if ($count_errors) {
+                $name .= ' <span class="badge badge-danger pull-right">' . $count_errors . '</span>';
+            }
+
+            $data['menus'][] = [
+                'id'       => 'menu-ovesio-list',
+                'icon'     => 'fa-android',
+                'name'     => $name,
+                'href'     => $this->url->link('extension/module/ovesio/activityList', $this->tokenQs()),
+                'children' => [],
+            ];
+        }
+    }
+
     /**
      * Custom template view
      */
@@ -215,6 +246,8 @@ class ControllerExtensionModuleOvesio extends Controller
     public function connect()
     {
         $this->load->language('extension/module/ovesio');
+
+        $this->load->model('setting/setting');
 
         $api_url   = $this->request->post['api_url'];
         $api_token = $this->request->post['api_token'];
@@ -271,6 +304,8 @@ class ControllerExtensionModuleOvesio extends Controller
     {
         $this->load->language('extension/module/ovesio');
 
+        $this->load->model('setting/setting');
+
         $this->model_setting_setting->editSettingValue($this->module_key, $this->module_key . '_status', '');
 
         $json = [
@@ -318,6 +353,8 @@ class ControllerExtensionModuleOvesio extends Controller
     {
         $data = $this->load->language('extension/module/ovesio');
 
+        $this->load->model('setting/setting');
+
         $settings = $this->model_setting_setting->getSetting($this->module_key);
         foreach ($settings as $key => $value) {
             $data[str_replace($this->module_key . '_', '', $key)] = $value;
@@ -344,6 +381,8 @@ class ControllerExtensionModuleOvesio extends Controller
     public function generateContentFormSave()
     {
         $this->load->language('extension/module/ovesio');
+
+        $this->load->model('setting/setting');
 
         $post = $this->request->post;
 
@@ -430,6 +469,8 @@ class ControllerExtensionModuleOvesio extends Controller
     {
         $data = $this->load->language('extension/module/ovesio');
 
+        $this->load->model('setting/setting');
+
         $settings = $this->model_setting_setting->getSetting($this->module_key);
         foreach ($settings as $key => $value) {
             $data[str_replace($this->module_key . '_', '', $key)] = $value;
@@ -456,6 +497,8 @@ class ControllerExtensionModuleOvesio extends Controller
     public function generateSeoFormSave()
     {
         $this->load->language('extension/module/ovesio');
+
+        $this->load->model('setting/setting');
 
         $post = $this->request->post;
 
@@ -577,6 +620,8 @@ class ControllerExtensionModuleOvesio extends Controller
     {
         $data = $this->load->language('extension/module/ovesio');
 
+        $this->load->model('setting/setting');
+
         $settings = $this->model_setting_setting->getSetting($this->module_key);
         foreach ($settings as $key => $value) {
             $data[str_replace($this->module_key . '_', '', $key)] = $value;
@@ -685,6 +730,8 @@ class ControllerExtensionModuleOvesio extends Controller
     {
         $this->load->language('extension/module/ovesio');
 
+        $this->load->model('setting/setting');
+
         $post = $this->request->post;
 
         if (!empty($post['translate_workflow'])) {
@@ -712,7 +759,15 @@ class ControllerExtensionModuleOvesio extends Controller
                 $errors['language_settings.' . $key . '.translate_from'] = $this->language->get('error_from_language');
             }
 
-            if (empty($post['language_settings'][$lang['translate_from']]['translate'])) {
+            $translate_from_id = '';
+            foreach ($post['language_settings'] as $k => $l) {
+                if ($l['code'] == $lang['translate_from']) {
+                    $translate_from_id = $k;
+                    break;
+                }
+            }
+
+            if (empty($post['language_settings'][$translate_from_id]['translate'])) {
                 if ($default_language != $lang['translate_from']) {
                     $errors['language_settings.' . $key . '.translate_from'] = $this->language->get('error_from_language1');
                 }

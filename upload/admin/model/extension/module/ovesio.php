@@ -51,11 +51,13 @@ class ModelExtensionModuleOvesio extends Model
 
         $sql = "SELECT ova.*, COALESCE(p.name, c.name, i.title, ag.name, o.name) as resource_name FROM `" . DB_PREFIX . "ovesio_activity` ova";
 
-        $sql .= " LEFT JOIN `" . DB_PREFIX . "product_description` p ON (p.product_id = ova.resource_id AND ova.resource_type = 'product')";
-        $sql .= " LEFT JOIN `" . DB_PREFIX . "category_description` c ON (c.category_id = ova.resource_id AND ova.resource_type = 'category')";
-        $sql .= " LEFT JOIN `" . DB_PREFIX . "information_description` i ON (i.information_id = ova.resource_id AND ova.resource_type = 'information')";
-        $sql .= " LEFT JOIN `" . DB_PREFIX . "attribute_group_description` ag ON (ag.attribute_group_id = ova.resource_id AND ova.resource_type = 'attribute_group')";
-        $sql .= " LEFT JOIN `" . DB_PREFIX . "option_description` o ON (o.option_id = ova.resource_id AND ova.resource_type = 'option')";
+        $language_id = $this->config->get('config_language_id');
+
+        $sql .= " LEFT JOIN `" . DB_PREFIX . "product_description` p ON (p.product_id = ova.resource_id AND ova.resource_type = 'product' AND p.language_id = '" . (int)$language_id . "')";
+        $sql .= " LEFT JOIN `" . DB_PREFIX . "category_description` c ON (c.category_id = ova.resource_id AND ova.resource_type = 'category' AND c.language_id = '" . (int)$language_id . "')";
+        $sql .= " LEFT JOIN `" . DB_PREFIX . "information_description` i ON (i.information_id = ova.resource_id AND ova.resource_type = 'information' AND i.language_id = '" . (int)$language_id . "')";
+        $sql .= " LEFT JOIN `" . DB_PREFIX . "attribute_group_description` ag ON (ag.attribute_group_id = ova.resource_id AND ova.resource_type = 'attribute_group' AND ag.language_id = '" . (int)$language_id . "')";
+        $sql .= " LEFT JOIN `" . DB_PREFIX . "option_description` o ON (o.option_id = ova.resource_id AND ova.resource_type = 'option' AND o.language_id = '" . (int)$language_id . "')";
 
         $sql .= " WHERE 1";
 
@@ -101,7 +103,13 @@ class ModelExtensionModuleOvesio extends Model
     private function applyFilters($sql, $filters)
     {
         if (!empty($filters['resource_name'])) {
-            $sql .= " AND COALESCE(p.name, c.name, i.title, ag.name, o.name) LIKE '%" . $this->db->escape($filters['resource_name']) . "%'";
+            $sql .= "
+                AND (      p.name LIKE '%Modules [AUTO - RO]%'
+   OR c.name LIKE '%Modules [AUTO - RO]%'
+   OR i.title LIKE '%Modules [AUTO - RO]%'
+   OR ag.name LIKE '%Modules [AUTO - RO]%'
+   OR o.name LIKE '%Modules [AUTO - RO]%')
+            ";
         }
 
         if (!empty($filters['resource_type'])) {

@@ -43,7 +43,7 @@ $_['entry_status']     = 'Status';
 
 // Additional text keys
 $_['text_connect'] = 'Connect';
-$_['text_activity_list'] = 'Lista de activități';
+$_['text_activity_list'] = 'Activity List';
 $_['text_message'] = 'Message';
 $_['text_api_url'] = 'API URL';
 $_['text_translated_fields'] = 'Translated Fields';
@@ -92,6 +92,7 @@ $_['text_processing'] = 'Processing';
 $_['text_completed'] = 'Completed';
 $_['text_skipped'] = 'Skipped';
 $_['text_error'] = 'Error';
+$_['text_errors'] = 'Errors';
 $_['text_generate_content'] = 'Generate Content';
 $_['text_generate_seo'] = 'Generate SEO';
 $_['text_resource_type'] = 'Resource Type';
